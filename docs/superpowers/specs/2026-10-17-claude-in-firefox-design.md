@@ -383,3 +383,25 @@ Native host manifest (written by `install.js` to `~/Library/Application Support/
 4. **Rest**: logs, `resize_window`, `file_upload`, `browser_batch`, README.
 
 Installing Firefox Developer Edition (`brew install --cask firefox@developer-edition`) requires the user's go-ahead.
+
+## Appendix A: Spike results (2026-10-17, Firefox Developer Edition 159.0b3)
+
+| Probe | Observed |
+|---|---|
+| Q1a viewport | innerWidth 1280, innerHeight 955, devicePixelRatio 2 |
+| Q1a background tab, scale 1 | 1280x955, distinctColors 10, topLeft `0,0,0` |
+| Q1a visible tab, scale 1 | 1280x955, distinctColors 10, topLeft `0,0,0` |
+| Q1b background tab, scale 0.5 (jpeg) | 640x477, distinctColors 95, topLeft `0,0,0` |
+| Q1c rect after scroll 1000 | 50x50, topLeft `0,0,0` (rect is document-relative) |
+| Q1d overlay hidden right before capture | topLeft `0,0,0`, not `255,0,0` |
+| Q1e minimized window | captured: 1280x955, distinctColors 15, topLeft `0,0,0` |
+| Q2 background tab input | execCommandResults `[true,true]`; value `hi`, value2 `xyz`, changes 2, submitted 1, keydowns 2 |
+| Q2 background tab link click | url `http://127.0.0.1:8787/landed.html` |
+| Q2 active tab input | execCommandResults `[true,true]`; value `hi`, value2 `xyz`, changes 2, submitted 1, keydowns 2 |
+| Q2 active tab link click | url `http://127.0.0.1:8787/landed.html` |
+| Q3a window.eval on strict CSP page | `ok: false`, `EvalError: call to eval() blocked by CSP` |
+| Q3b wrappedJSObject.pageVar | `42` |
+| Q3c event-based page program | `{"ok":true,"v":42}` |
+| Q3d sandbox promise result | `7` |
+| Q4 native port after 11 min | 12 heartbeats logged, 0 `stdin closed`, 0 `Q4-native-disconnected` |
+| Q5 tab groups in MV2 | groupId 1792185247976073 (integer), members `[3]` includes the tab, title `Claude · spik`, color `orange` |
