@@ -34,11 +34,28 @@
     }
   };
 
-  for (const level of ["log", "info", "warn", "error", "debug"]) {
-    const original = page.console[level];
+  const levels = ["log", "info", "warn", "error", "debug"];
+  // A forwarder installed by an earlier injection dies with its sandbox, so the page's own functions are kept on the console itself for later injections to find.
+  if (!page.console.__claudeFirefoxConsoleOriginals) {
+    const kept = new page.Object();
+    for (const level of levels) kept[level] = page.console[level];
+    const descriptor = new page.Object();
+    descriptor.value = kept;
+    descriptor.configurable = true;
+    page.Object.defineProperty(page.console, "__claudeFirefoxConsoleOriginals", descriptor);
+  }
+  const originals = page.console.__claudeFirefoxConsoleOriginals;
+  for (const level of levels) {
+    const original = originals[level];
     exportFunction(function consoleProxy(...args) {
-      record(level, args.map(format).join(" "));
-      return original.call(this, ...args);
+      try {
+        record(level, args.map(format).join(" "));
+      } catch {}
+      try {
+        return original.call(this, ...args);
+      } catch {
+        return undefined;
+      }
     }, page.console, { defineAs: level });
   }
   window.addEventListener("error", (event) => record("exception", `${event.message} (${event.filename}:${event.lineno}:${event.colno})`));

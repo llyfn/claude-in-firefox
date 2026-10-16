@@ -61,6 +61,7 @@ After extension changes, run `npm run build` and reinstall the add-on. After cha
   - Clipboard paste is unavailable.
   - Pages that ignore script-generated events will not react.
 - Only one Firefox profile can run the extension at a time; a second profile's native host exits.
+- Disabling, reloading or updating the add-on can break `console` in tabs that were already open; reload those tabs.
 - Reloading the extension forgets the session-to-group mapping. Call `tabs_context` with `createIfEmpty: true` again.
 
 ## Development
