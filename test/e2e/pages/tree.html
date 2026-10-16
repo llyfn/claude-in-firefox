@@ -1,0 +1,18 @@
+<!doctype html><title>Tree page</title>
+<nav><a href="/basic.html">Home</a> <a href="/about">About us</a></nav>
+<main>
+  <h1>Welcome</h1>
+  <form>
+    <label for="email">Email</label><input id="email" type="email" placeholder="you@example.com">
+    <input id="pw" type="password" value="hunter2" aria-label="Password">
+    <select aria-label="Country"><option value="us" selected>United States</option><option value="kr">Korea</option></select>
+    <button type="submit">Subscribe</button>
+  </form>
+  <custom-card></custom-card>
+  <div style="position:absolute; top:3000px"><button>Far below</button></div>
+</main>
+<script>
+  customElements.define("custom-card", class extends HTMLElement {
+    constructor() { super(); this.attachShadow({ mode: "open" }).innerHTML = "<button>Shadow action</button>"; }
+  });
+</script>

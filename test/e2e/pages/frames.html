@@ -1,0 +1,6 @@
+<!doctype html><title>Frames</title>
+<style>body{margin:0} #cross{position:absolute;left:20px;top:200px;width:400px;height:200px;border:0}</style>
+<h1>Frame host</h1>
+<iframe id="same" srcdoc="<button>Same-origin button</button>"></iframe>
+<iframe id="cross" title="Cross-origin frame"></iframe>
+<script>document.getElementById("cross").src = new URLSearchParams(location.search).get("b") + "/frame-inner.html";</script>

@@ -65,3 +65,56 @@ describe("tabs and navigation", () => {
     assert.equal(textOf(await h.call("resize_window", { tabId, width: 1280, height: 900 })), "Resized window to 1280x900");
   });
 });
+
+describe("reading pages", () => {
+  test("read_page shows landmarks, refs, options, shadow DOM and redacted secrets", async () => {
+    const tabId = await openTab("/tree.html");
+    const text = textOf(await h.call("read_page", { tabId }));
+    assert.match(text, /link "Home" \[ref_\d+\] href="\/basic.html"/);
+    assert.match(text, /textbox "Email" \[ref_\d+\] type="email" placeholder="you@example.com"/);
+    assert.match(text, /option "United States" \(selected\) value="us"/);
+    assert.match(text, /textbox "Password" \[ref_\d+\] type="password" value="\[value redacted\]"/);
+    assert.doesNotMatch(text, /hunter2/);
+    assert.match(text, /button "Shadow action" \[ref_\d+\]/);
+    assert.match(text, /\n\nViewport: \d+x\d+$/);
+  });
+
+  test("refs are stable between calls", async () => {
+    const tabId = await openTab("/tree.html");
+    const ref = (text) => /button "Subscribe" \[(ref_\d+)\]/.exec(text)[1];
+    const first = ref(textOf(await h.call("read_page", { tabId })));
+    const second = ref(textOf(await h.call("read_page", { tabId, filter: "interactive" })));
+    assert.equal(first, second);
+  });
+
+  test("the interactive filter drops off-screen and non-interactive elements", async () => {
+    const tabId = await openTab("/tree.html");
+    const text = textOf(await h.call("read_page", { tabId, filter: "interactive" }));
+    assert.match(text, /Subscribe/);
+    assert.doesNotMatch(text, /Far below|Welcome/);
+  });
+
+  test("ref_id focuses on one subtree and max_chars truncates", async () => {
+    const tabId = await openTab("/tree.html");
+    const full = textOf(await h.call("read_page", { tabId }));
+    const navRef = /navigation \[(ref_\d+)\]/.exec(full)[1];
+    const nav = textOf(await h.call("read_page", { tabId, ref_id: navRef }));
+    assert.match(nav, /About us/);
+    assert.doesNotMatch(nav, /Subscribe/);
+    assert.match(textOf(await h.call("read_page", { tabId, max_chars: 200 })), /\[output truncated at \d+ of \d+ characters/);
+  });
+
+  test("same-origin and cross-origin iframe contents are included", async () => {
+    const tabId = await openTab(`/frames.html?b=${encodeURIComponent(h.fixtures.b)}`);
+    const text = textOf(await h.call("read_page", { tabId }));
+    assert.match(text, /button "Same-origin button" \[ref_\d+\]/);
+    assert.match(text, /iframe "Cross-origin frame" \[ref_\d+\] \[frame \d+\]/);
+    assert.match(text, /button "Frame button" \[f\d+_ref_\d+\]/);
+  });
+
+  test("find ranks the best keyword match first", async () => {
+    const tabId = await openTab("/tree.html");
+    const text = textOf(await h.call("find", { tabId, query: "subscribe button" }));
+    assert.match(text, /^Found \d+ element\(s\) matching "subscribe button", best first:\n\n- ref_\d+: button "Subscribe"/);
+  });
+});

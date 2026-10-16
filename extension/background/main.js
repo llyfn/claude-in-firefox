@@ -3,6 +3,7 @@ import { createContent } from "./content.js";
 import { createDispatcher } from "./dispatch.js";
 import { connectNative } from "./native.js";
 import { createSessions } from "./sessions.js";
+import { pageTools } from "./tools/page.js";
 import { tabTools } from "./tools/tabs.js";
 
 const api = browser;
@@ -16,6 +17,7 @@ api.tabs.onCreated.addListener((tab) => {
 
 const tools = {
   ...tabTools({ api, sessions }),
+  ...pageTools({ content }),
 };
 
 let native = null;
