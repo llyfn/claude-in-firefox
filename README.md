@@ -17,19 +17,17 @@ The MCP server runs from this repository. The native host is the process Firefox
 ## Requirements
 
 - macOS or Linux, Node ≥ 20 to run, Claude Code. On Linux, use a Firefox installed from Mozilla or your distribution's package; the Snap and Flatpak builds keep native-messaging hosts elsewhere and are not supported.
-- Node ≥ 22.22 for development and tests (jsdom 30 requires it)
-- Firefox Developer Edition 140 or newer: `brew install --cask firefox@developer-edition`
+- Firefox 140 or newer. The signed add-on works in regular Firefox; unsigned development builds need Firefox Developer Edition or Nightly.
+- Node ≥ 22.22 for development and tests (jsdom 30 requires it).
 
 ## Install
 
-1. `npm install`
-2. `npm run install-host`. This copies the native host's runtime files (`native-host.js`, `framing.js`, `paths.js`, and a `package.json` with `"type": "module"`) into the host directory above, writes a `native-host` shell wrapper next to them, writes the native-messaging manifest `claude_firefox_bridge.json` (to `~/Library/Application Support/Mozilla/NativeMessagingHosts/` on macOS, `~/.mozilla/native-messaging-hosts/` on Linux) pointing at that wrapper, and prints a `claude mcp add` command.
+1. Download the `.xpi` from the [latest release](https://github.com/llyfn/claude-in-firefox/releases/latest) and open it in Firefox to install the signed add-on.
+2. Clone this repository, then run `npm install` and `npm run install-host`. The installer copies the native host's runtime files (`native-host.js`, `framing.js`, `paths.js`, and a `package.json` with `"type": "module"`) into the host directory above, writes a `native-host` shell wrapper next to them, writes the native-messaging manifest `claude_firefox_bridge.json` (to `~/Library/Application Support/Mozilla/NativeMessagingHosts/` on macOS, `~/.mozilla/native-messaging-hosts/` on Linux) pointing at that wrapper, and prints a `claude mcp add` command.
 3. Run the printed `claude mcp add --scope user firefox -- …` command.
-4. In Firefox Developer Edition, open `about:config` and set `xpinstall.signatures.required` to `false`.
-5. `npm run build`, then in Firefox open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/claude_code_bridge_for_firefox-0.1.0.zip`.
-6. Start a new Claude Code session and ask it to use the `firefox` tools. It should begin with `tabs_context` and `createIfEmpty: true`.
+4. Start a new Claude Code session and ask it to use the `firefox` tools. It should begin with `tabs_context` and `createIfEmpty: true`.
 
-After extension changes, run `npm run build` and reinstall the add-on. After changes under `host/src`, re-run `npm run install-host`, because Firefox runs a copy of the host. The MCP server always runs from the repository.
+To update, install the `.xpi` from the newer release (the add-on does not update itself), `git pull`, and re-run `npm run install-host`, because Firefox runs a copy of the host. The MCP server always runs from the repository.
 
 ## Tools
 
@@ -75,15 +73,32 @@ npm run e2e       # drives a real Firefox Developer Edition
 npm run build     # packages the extension into web-ext-artifacts/
 ```
 
-Development and tests need Node ≥ 22.22. E2E needs Firefox Developer Edition and a prior `npm run install-host`. Do not run it while another Firefox Developer Edition instance has the extension installed: only one native host can own the bridge socket.
+To run an unsigned build, open `about:config` in Firefox Developer Edition, set `xpinstall.signatures.required` to `false`, run `npm run build`, then open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/claude_code_bridge_for_firefox-<version>.zip`. Re-run `npm run install-host` after changes under `host/src`.
+
+Development and tests need Node ≥ 22.22. E2E needs Firefox Developer Edition and a prior `npm run install-host`. Do not run it while another Firefox instance has the add-on installed: only one native host can own the bridge socket.
 
 E2E uses `FIREFOX_BIN` if set, otherwise `/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox`; on Linux set `FIREFOX_BIN` to your Firefox Developer Edition binary.
 
 Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`.
 
+## Releasing
+
+Releases are signed by addons.mozilla.org as an unlisted add-on (not shown in the add-ons store) and attached to a GitHub release by `.github/workflows/release.yml`.
+
+One-time setup:
+
+1. Create an addons.mozilla.org account and generate API credentials at <https://addons.mozilla.org/developers/addon/api/key/>.
+2. Store them as repository secrets: `gh secret set AMO_JWT_ISSUER` and `gh secret set AMO_JWT_SECRET`.
+
+For each release:
+
+1. Bump `version` in `extension/manifest.json` (and `package.json`). addons.mozilla.org refuses to sign a version it has already signed.
+2. Commit, then push a matching tag: `git tag v0.1.0 && git push origin v0.1.0`.
+3. The workflow checks that the tag matches the manifest version, runs the unit tests and lint, signs the add-on, and publishes the release with the signed `.xpi`.
+
 ## Troubleshooting
 
-- **"Firefox extension not connected".** Firefox Developer Edition isn't running, the add-on isn't installed, or `npm run install-host` wasn't run. The Browser Console (⌘⇧J) shows native host errors prefixed `claude-firefox native host:`.
+- **"Firefox extension not connected".** Firefox isn't running, the add-on isn't installed, or `npm run install-host` wasn't run. The Browser Console (⌘⇧J) shows native host errors prefixed `claude-firefox native host:`.
 - **Native host or MCP server stops starting after a Node upgrade.** The installer records the first `node` on `PATH`. After changing Node installations, re-run `npm run install-host` and update the `claude mcp add` entry with the command it prints.
 - **"Cannot access this page".** The page is one Firefox reserves (see Safety).
 - **Clicks land in the wrong place.** Take a fresh `screenshot` first: coordinates always refer to the most recent screenshot of that tab.
