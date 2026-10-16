@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { install } from "../../host/src/install.js";
+import { install, stableNodePath } from "../../host/src/install.js";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -31,4 +31,19 @@ test("install copies the native host under Application Support and writes the ma
   assert.equal(fs.readFileSync(result.wrapperPath, "utf8"), `#!/bin/sh\nexec "/opt/node/bin/node" "${path.join(hostDir, "native-host.js")}" "$@"\n`);
   assert.equal(fs.statSync(result.wrapperPath).mode & 0o777, 0o755);
   assert.equal(result.mcpCommand, `claude mcp add --scope user firefox -- "/opt/node/bin/node" "${path.join(REPO, "host/src/mcp-server.js")}"`);
+});
+
+test("stableNodePath returns the first executable node on PATH without resolving symlinks and falls back to the running node", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cfb-path-"));
+  const real = path.join(root, "Cellar/node/1.0/bin");
+  const stable = path.join(root, "bin");
+  const noExec = path.join(root, "noexec");
+  for (const dir of [real, stable, noExec]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(real, "node"), "#!/bin/sh\n", { mode: 0o755 });
+  fs.symlinkSync(path.join(real, "node"), path.join(stable, "node"));
+  fs.writeFileSync(path.join(noExec, "node"), "", { mode: 0o644 });
+
+  assert.equal(stableNodePath({ PATH: ["relative", path.join(root, "missing"), noExec, stable, real].join(path.delimiter) }), path.join(stable, "node"));
+  assert.equal(stableNodePath({ PATH: path.join(root, "missing") }), process.execPath);
+  assert.equal(stableNodePath({}), process.execPath);
 });

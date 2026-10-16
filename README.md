@@ -82,5 +82,6 @@ Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`. Notes o
 ## Troubleshooting
 
 - **"Firefox extension not connected".** Firefox Developer Edition isn't running, the add-on isn't installed, or `npm run install-host` wasn't run. The Browser Console (⌘⇧J) shows native host errors prefixed `claude-firefox native host:`.
+- **Native host or MCP server stops starting after a Node upgrade.** The installer records the first `node` on `PATH`. After changing Node installations, re-run `npm run install-host` and update the `claude mcp add` entry with the command it prints.
 - **"Cannot access this page".** The page is one Firefox reserves (see Safety).
 - **Clicks land in the wrong place.** Take a fresh `screenshot` first: coordinates always refer to the most recent screenshot of that tab.
