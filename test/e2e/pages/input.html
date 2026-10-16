@@ -1,0 +1,26 @@
+<!doctype html><title>Input lab</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  .abs { position: absolute; }
+  #big { left: 40px; top: 40px; width: 200px; height: 60px; }
+  #hover-target { left: 260px; top: 40px; width: 120px; height: 30px; background: #eee; }
+  #drag-source { left: 400px; top: 40px; width: 100px; height: 40px; background: #cde; }
+  #drop-zone { left: 400px; top: 120px; width: 200px; height: 80px; border: 2px dashed #888; }
+  #scroller { left: 40px; top: 120px; width: 200px; height: 120px; overflow: auto; border: 1px solid #888; }
+  #scroller div { height: 600px; }
+  #flow { margin-top: 260px; padding: 0 40px; }
+</style>
+<button id="big" class="abs" onclick="log('clicked big')" ondblclick="log('dblclicked big')" oncontextmenu="log('context big'); return false">Big button</button>
+<span id="hover-target" class="abs" onmouseover="log('hovered')">Hover me</span>
+<div id="drag-source" class="abs" draggable="true" ondragstart="event.dataTransfer.setData('text/plain', 'payload')">Drag me</div>
+<div id="drop-zone" class="abs" ondragover="event.preventDefault()" ondrop="event.preventDefault(); log('dropped ' + event.dataTransfer.getData('text/plain'))">Drop here</div>
+<div id="scroller" class="abs"><div>Tall content</div></div>
+<div id="flow">
+  <form onsubmit="event.preventDefault(); log('submitted ' + new FormData(this).get('q'))">
+    <label for="q">Query</label> <input id="q" name="q"> <button>Go</button>
+  </form>
+  <p><a id="newtab" href="/basic.html" target="_blank">Open basic in new tab</a></p>
+  <div id="editor" contenteditable="true" aria-label="Editor" style="border: 1px solid #888; min-height: 2em"></div>
+  <pre id="log"></pre>
+</div>
+<script>function log(m) { document.getElementById("log").textContent += m + "\n"; }</script>

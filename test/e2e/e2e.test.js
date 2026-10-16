@@ -1,6 +1,6 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { startHarness, textOf } from "./harness.js";
+import { imagesOf, startHarness, textOf } from "./harness.js";
 
 let h;
 before(async () => { h = await startHarness(); }, { timeout: 180_000 });
@@ -189,5 +189,97 @@ describe("javascript_tool", () => {
     const text = textOf(await js(tabId, "window.wrappedJSObject.pageVar"));
     assert.match(text, /^\[ran in extension sandbox/);
     assert.match(text, /42$/);
+  });
+});
+
+describe("computer", () => {
+  let tabId;
+  let toShot;
+  const computer = (args) => h.call("computer", { tabId, ...args });
+  const log = async () => textOf(await h.call("get_page_text", { tabId }));
+  const js = async (id, text) => textOf(await h.call("javascript_tool", { tabId: id, action: "javascript_exec", text }));
+  async function frameMapper(id) {
+    const [, w, hgt] = /Screenshot (\d+)x(\d+)/.exec(textOf(await h.call("computer", { tabId: id, action: "screenshot" }))).map(Number);
+    const [, vw, vh] = /Viewport: (\d+)x(\d+)$/.exec(textOf(await h.call("read_page", { tabId: id, filter: "interactive" }))).map(Number);
+    return (x, y) => [Math.round((x * w) / vw), Math.round((y * hgt) / vh)];
+  }
+
+  before(async () => {
+    tabId = await openTab("/input.html");
+    toShot = await frameMapper(tabId);
+  });
+
+  test("screenshot returns a JPEG image block", async () => {
+    const result = await computer({ action: "screenshot" });
+    assert.match(textOf(result), /^Screenshot \d+x\d+ \(jpeg\)$/);
+    assert.equal(imagesOf(result)[0].mimeType, "image/jpeg");
+    assert.ok(imagesOf(result)[0].data.length > 1000);
+  });
+
+  test("coordinate clicks, double clicks and right clicks reach the element", async () => {
+    await computer({ action: "left_click", coordinate: toShot(140, 70) });
+    await computer({ action: "double_click", coordinate: toShot(140, 70) });
+    await computer({ action: "right_click", coordinate: toShot(140, 70) });
+    const text = await log();
+    assert.match(text, /clicked big/);
+    assert.match(text, /dblclicked big/);
+    assert.match(text, /context big/);
+  });
+
+  test("hover dispatches mouseover", async () => {
+    await computer({ action: "hover", coordinate: toShot(320, 55) });
+    assert.match(await log(), /hovered/);
+  });
+
+  test("click by ref, typing Unicode and Enter submit the form", async () => {
+    const query = /textbox "Query" \[(ref_\d+)\]/.exec(textOf(await h.call("read_page", { tabId })))[1];
+    assert.equal(textOf(await computer({ action: "left_click", ref: query })), `Clicked ${query}`);
+    await computer({ action: "type", text: "héllo 👋" });
+    await computer({ action: "key", text: "Enter" });
+    assert.match(await log(), /submitted héllo 👋/);
+  });
+
+  test("cmd+a then Backspace clears the field and Tab moves focus on", async () => {
+    await computer({ action: "key", text: "cmd+a BackSpace" });
+    assert.doesNotMatch(textOf(await h.call("read_page", { tabId })), /textbox "Query" \[ref_\d+\] value=/);
+    await computer({ action: "key", text: "Tab" });
+    assert.equal(await js(tabId, "document.activeElement.textContent"), "Go");
+  });
+
+  test("scroll scrolls the element under the pointer and returns a screenshot", async () => {
+    const result = await computer({ action: "scroll", coordinate: toShot(140, 180), scroll_direction: "down", scroll_amount: 2 });
+    assert.equal(imagesOf(result).length, 1);
+    assert.equal(await js(tabId, "document.getElementById('scroller').scrollTop"), "200");
+  });
+
+  test("left_click_drag performs HTML5 drag and drop", async () => {
+    await computer({ action: "left_click_drag", start_coordinate: toShot(450, 60), coordinate: toShot(500, 160) });
+    assert.match(await log(), /dropped payload/);
+  });
+
+  test("target=_blank links open in a new tab inside the session's group", async () => {
+    const link = /link "Open basic in new tab" \[(ref_\d+)\]/.exec(textOf(await h.call("read_page", { tabId })))[1];
+    const opened = Number(/link opened in new tab (\d+)/.exec(textOf(await computer({ action: "left_click", ref: link })))[1]);
+    const ctx = JSON.parse(textOf(await h.call("tabs_context")));
+    assert.ok(ctx.availableTabs.some((t) => t.tabId === opened));
+  });
+
+  test("zoom returns a PNG and wait pauses", async () => {
+    const zoomed = await computer({ action: "zoom", region: [...toShot(40, 40), ...toShot(240, 100)] });
+    assert.equal(imagesOf(zoomed)[0].mimeType, "image/png");
+    assert.match(textOf(await computer({ action: "wait", duration: 0.5 })), /^Waited 0\.5 second/);
+  });
+
+  test("clicks reach cross-origin iframes by ref and by coordinate", async () => {
+    const frames = `/frames.html?b=${encodeURIComponent(h.fixtures.b)}`;
+    const byRef = await openTab(frames);
+    const ref = /button "Frame button" \[(f\d+_ref_\d+)\]/.exec(textOf(await h.call("read_page", { tabId: byRef })))[1];
+    await h.call("computer", { tabId: byRef, action: "left_click", ref });
+    assert.match(textOf(await h.call("read_page", { tabId: byRef })), /frame clicked/);
+
+    const byPoint = await openTab(frames);
+    const map = await frameMapper(byPoint);
+    await h.call("computer", { tabId: byPoint, action: "left_click", coordinate: map(105, 230) });
+    assert.match(textOf(await h.call("read_page", { tabId: byPoint })), /frame clicked/);
   });
 });
