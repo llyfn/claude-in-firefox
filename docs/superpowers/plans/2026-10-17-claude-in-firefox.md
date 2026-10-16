@@ -6078,7 +6078,7 @@ npm run build     # packages the extension into web-ext-artifacts/
 
 E2E uses `FIREFOX_BIN` if set, otherwise `/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox`.
 
-Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`. Notes on how Claude in Chrome works: `docs/reference/claude-in-chrome-internals.md`.
+Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`.
 
 ## Troubleshooting
 
