@@ -23,6 +23,8 @@ function serialize(value) {
       const classes = typeof v.className === "string" && v.className.trim() ? `.${v.className.trim().split(/\s+/).join(".")}` : "";
       return `<${v.tagName.toLowerCase()}${id}${classes}>`;
     }
+    if (v instanceof Date) return Number.isNaN(v.getTime()) ? "Invalid Date" : v.toISOString();
+    if (v instanceof RegExp) return String(v);
     if (v instanceof Error) return `${v.name}: ${v.message}`;
     if (seen.has(v)) return "[Circular]";
     if (depth >= 5) return Array.isArray(v) ? `[Array(${v.length})]` : "[Object]";

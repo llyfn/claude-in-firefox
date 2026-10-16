@@ -30,6 +30,13 @@ test("describes DOM nodes, functions, cycles and long strings", async () => {
   assert.match((await run("'z'.repeat(1500)")).value, /…\[500 more chars\]$/);
 });
 
+test("dates render as ISO strings and regular expressions as their source text", async () => {
+  assert.equal((await run("new Date(0)")).value, "1970-01-01T00:00:00.000Z");
+  assert.equal((await run("new Date(NaN)")).value, "Invalid Date");
+  assert.equal((await run("/a+b/gi")).value, "/a+b/gi");
+  assert.equal((await run("({ at: new Date(86400000), re: /x/ })")).value, '{\n  "at": "1970-01-02T00:00:00.000Z",\n  "re": "/x/"\n}');
+});
+
 test("reports thrown errors with their name", async () => {
   const result = await run("nope.value");
   assert.equal(result.ok, false);
