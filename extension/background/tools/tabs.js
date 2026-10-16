@@ -1,4 +1,7 @@
 const NAVIGATION_TIMEOUT_MS = 15_000;
+const HAS_SCHEME = /^(?:[a-z][a-z0-9+.-]*:\/\/|(?:about|data|javascript|view-source|moz-extension|file):)/i;
+
+export const withScheme = (url) => (HAS_SCHEME.test(url) ? url : `https://${url}`);
 
 export function tabTools({ api, sessions }) {
   return {
@@ -45,7 +48,7 @@ async function navigate(api, tab, url) {
   const finished = waitForNavigation(api, tab.id, NAVIGATION_TIMEOUT_MS, url === "back" || url === "forward" || url.trim() === "about:blank");
   if (url === "back") await api.tabs.goBack(tab.id);
   else if (url === "forward") await api.tabs.goForward(tab.id);
-  else await api.tabs.update(tab.id, { url: /^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}` });
+  else await api.tabs.update(tab.id, { url: withScheme(url) });
   const loadedUrl = await finished;
   if (!loadedUrl) {
     const now = await api.tabs.get(tab.id);
