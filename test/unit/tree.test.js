@@ -22,10 +22,11 @@ test("roles, names, refs and attributes follow the line format", () => {
 test("password, one-time-code and card values are redacted and hidden inputs skipped", () => {
   const w = loadContent(`<input type="password" value="hunter2"><input autocomplete="one-time-code" value="123456">
     <input autocomplete="cc-number" value="4111111111111111"><input type="hidden" value="csrf-token">
+    <input autocomplete="billing cc-name" value="Ada Lovelace">
     <select autocomplete="cc-exp-month"><option selected>01</option><option>02</option></select>`);
   const text = render(w);
-  for (const secret of ["hunter2", "123456", "4111", "csrf-token"]) assert.ok(!text.includes(secret), secret);
-  assert.equal(text.match(/value="\[value redacted\]"/g).length, 3);
+  for (const secret of ["hunter2", "123456", "4111", "csrf-token", "Ada Lovelace"]) assert.ok(!text.includes(secret), secret);
+  assert.equal(text.match(/value="\[value redacted\]"/g).length, 4);
   assert.match(text, /combobox "\[value redacted\]" \[ref_\d+\]/);
   assert.doesNotMatch(text, /option/);
 });
@@ -88,7 +89,9 @@ test("very large pages are capped at 10000 nodes with a truncation note", () => 
   assert.equal(result.truncated, true);
   assert.equal(result.nodes.length, 10_000);
   assert.ok(Date.now() - started < 10_000, "tree build should finish quickly");
-  assert.match(renderTree(result.nodes, { truncatedNodes: true }), /\[truncated at 10000 elements/);
+  const text = renderTree(result.nodes, { truncatedNodes: true });
+  assert.match(text, /\[output truncated at \d+ of \d+ characters/);
+  assert.match(text, /\[truncated at 10000 elements/);
 });
 
 test("renderTree truncates at a line boundary with a note", () => {
