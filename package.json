@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Drive Firefox from Claude Code through MCP tools modeled on Claude in Chrome",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=20"
