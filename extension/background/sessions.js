@@ -17,6 +17,16 @@ export function createSessions(api) {
     }
   }
 
+  const creating = new Map();
+
+  async function createGroup(sessionId) {
+    const tab = await newBlankTab();
+    const groupId = await api.tabs.group({ tabIds: [tab.id], createProperties: { windowId: tab.windowId } });
+    await api.tabGroups.update(groupId, { title: `Claude · ${sessionId.slice(0, 4)}`, color: COLORS[nextColor++ % COLORS.length] });
+    groups.set(sessionId, groupId);
+    return groupId;
+  }
+
   async function newBlankTab() {
     let win = null;
     try {
@@ -34,10 +44,10 @@ export function createSessions(api) {
       let groupId = await liveGroup(sessionId);
       if (groupId == null) {
         if (!createIfEmpty) return null;
-        const tab = await newBlankTab();
-        groupId = await api.tabs.group({ tabIds: [tab.id], createProperties: { windowId: tab.windowId } });
-        await api.tabGroups.update(groupId, { title: `Claude · ${sessionId.slice(0, 4)}`, color: COLORS[nextColor++ % COLORS.length] });
-        groups.set(sessionId, groupId);
+        if (!creating.has(sessionId)) {
+          creating.set(sessionId, createGroup(sessionId).finally(() => creating.delete(sessionId)));
+        }
+        groupId = await creating.get(sessionId);
       }
       const tabs = await api.tabs.query({ groupId });
       return { availableTabs: tabs.map((t) => ({ tabId: t.id, title: t.title, url: t.url })), tabGroupId: groupId };

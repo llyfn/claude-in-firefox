@@ -52,6 +52,18 @@ test("createIfEmpty creates one blank background tab in a titled, colored group,
   assert.equal((await sessions.context("abcd-1234", { createIfEmpty: true })).availableTabs.length, 1);
 });
 
+test("concurrent createIfEmpty calls create only one group", async () => {
+  const { api, tabs, groups } = fakeApi();
+  const sessions = createSessions(api);
+  const [a, b] = await Promise.all([
+    sessions.context("s", { createIfEmpty: true }),
+    sessions.context("s", { createIfEmpty: true }),
+  ]);
+  assert.equal(a.tabGroupId, b.tabGroupId);
+  assert.equal(groups.size, 1);
+  assert.equal(tabs.size, 1);
+});
+
 test("each session gets its own group and color", async () => {
   const { api, groups } = fakeApi();
   const sessions = createSessions(api);
