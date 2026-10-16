@@ -90,3 +90,8 @@ test("page text falls back to the body", () => {
   const w = loadContent(`<div>Only a div</div>`, FILES);
   assert.equal(w.__cf.text.pageText().tag, "body");
 });
+
+test("setFiles refuses elements that are not file inputs", () => {
+  const w = loadContent(`<label for="n">Name</label><input id="n">`, FILES);
+  assert.throws(() => w.__cf.form.setFiles({ ref: refByName(w, "Name"), files: [], guard: null }), /is not an <input type="file">/);
+});

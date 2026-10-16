@@ -71,5 +71,23 @@
     return `Selected "${option.text.trim()}" (previous: "${previous}")`;
   }
 
-  cf.form = { setValue };
+  function setFiles({ ref, files, guard }) {
+    const el = cf.tree.resolve(ref);
+    if (el.tagName.toUpperCase() !== "INPUT" || el.type !== "file") throw new Error(`${ref} is not an <input type="file">`);
+    cf.dom.guardHost(guard);
+    const win = el.ownerDocument.defaultView;
+    const transfer = new win.DataTransfer();
+    for (const file of files) {
+      const binary = atob(file.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      transfer.items.add(new win.File([bytes], file.name, { type: file.mimeType }));
+    }
+    el.files = transfer.files;
+    fire(el, "input");
+    fire(el, "change");
+    return `Uploaded ${files.length} file(s) to ${ref}: ${files.map((f) => f.name).join(", ")}`;
+  }
+
+  cf.form = { setValue, setFiles };
 })();

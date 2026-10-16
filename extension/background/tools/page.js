@@ -64,5 +64,14 @@ export function pageTools({ api, content }) {
         return content.call(tab.id, frameId, "form.setValue", { ref, value: args.value, guard });
       },
     },
+    file_upload: {
+      tabScoped: true,
+      async run({ tab, args }) {
+        if (!Array.isArray(args.files) || args.files.length === 0) throw new Error("file_upload: no files were provided");
+        const { frameId, ref } = parseRef(args.ref);
+        const guard = await guardFor(api, tab, frameId, "file_upload");
+        return content.call(tab.id, frameId, "form.setFiles", { ref, files: args.files, guard });
+      },
+    },
   };
 }

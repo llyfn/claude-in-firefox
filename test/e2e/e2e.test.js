@@ -1,5 +1,6 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { imagesOf, startHarness, textOf } from "./harness.js";
 
 let h;
@@ -324,5 +325,34 @@ describe("console and network", () => {
     const tabId = await openTab("/console.html");
     await eventually(async () => assert.match(textOf(await h.call("read_console_messages", { tabId, clear: true })), /page loaded/));
     assert.match(textOf(await h.call("read_console_messages", { tabId, pattern: "page loaded" })), /No console messages found/);
+  });
+});
+
+describe("file_upload and browser_batch", () => {
+  test("file_upload puts local files into a file input", async () => {
+    const tabId = await openTab("/upload.html");
+    const ref = /button "Attachment" \[(ref_\d+)\]/.exec(textOf(await h.call("read_page", { tabId })))[1];
+    const sample = fileURLToPath(new URL("./pages/upload-sample.txt", import.meta.url));
+    assert.match(textOf(await h.call("file_upload", { tabId, ref, paths: [sample] })), /^Uploaded 1 file\(s\) to ref_\d+: upload-sample\.txt$/);
+    assert.match(textOf(await h.call("get_page_text", { tabId })), /upload-sample\.txt 13 text\/plain/);
+  });
+
+  test("browser_batch runs steps in order and stops at the first error", async () => {
+    const tabId = await openTab("/input.html");
+    const result = await h.call("browser_batch", {
+      actions: [
+        { name: "computer", input: { tabId, action: "screenshot", scale: 0.5 } },
+        { name: "navigate", input: { tabId, url: `${h.fixtures.a}/basic.html` } },
+        { name: "computer", input: { tabId, action: "left_click", ref: "ref_999999" } },
+        { name: "get_page_text", input: { tabId } },
+      ],
+    });
+    assert.equal(result.isError, true);
+    const text = textOf(result);
+    assert.match(text, /\[0:computer\] Screenshot \d+x\d+ \(jpeg\), scaled/);
+    assert.match(text, /\[1:navigate\] Navigated to/);
+    assert.match(text, /\[2:computer\] Element ref_999999 not found/);
+    assert.doesNotMatch(text, /\[3:/);
+    assert.equal(imagesOf(result).length, 1);
   });
 });

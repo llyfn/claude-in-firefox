@@ -1,0 +1,8 @@
+<!doctype html><title>Upload</title>
+<label for="file">Attachment</label><input id="file" type="file" multiple>
+<pre id="log"></pre>
+<script>
+  document.getElementById("file").addEventListener("change", (e) => {
+    for (const f of e.target.files) document.getElementById("log").textContent += `${f.name} ${f.size} ${f.type}\n`;
+  });
+</script>
