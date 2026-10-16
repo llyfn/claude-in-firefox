@@ -99,7 +99,7 @@ async function inSandbox(api, tabId, code) {
   try {
     let value;
     try {
-      value = await execute(api, tabId, code);
+      value = await execute(api, tabId, `{\n${code}\n}`);
     } catch (err) {
       if (!WRAPPABLE.test(err.message)) throw err;
       value = await execute(api, tabId, `(async () => {\n${code}\n})()`);

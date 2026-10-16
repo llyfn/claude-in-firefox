@@ -191,6 +191,16 @@ describe("javascript_tool", () => {
     assert.match(text, /^\[ran in extension sandbox/);
     assert.match(text, /42$/);
   });
+
+  test("sandboxed code can declare the same top-level name in repeated calls", async () => {
+    const tabId = await openTab("/csp-page.html");
+    const code = "const v = window.wrappedJSObject.pageVar; v";
+    for (let i = 0; i < 2; i++) {
+      const result = await js(tabId, code);
+      assert.notEqual(result.isError, true, textOf(result));
+      assert.match(textOf(result), /42$/);
+    }
+  });
 });
 
 describe("computer", () => {
