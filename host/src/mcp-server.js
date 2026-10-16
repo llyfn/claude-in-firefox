@@ -12,7 +12,7 @@ import { TOOLS, TOOL_BY_NAME } from "./tools.js";
 export const CALL_TIMEOUT_MS = 30_000;
 export const BATCH_TIMEOUT_MS = 90_000;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-export const NOT_CONNECTED_MESSAGE = "Firefox extension not connected — is Firefox running with the Firefox Bridge for Claude Code add-on installed?";
+export const NOT_CONNECTED_MESSAGE = "Firefox extension not connected — is Firefox running with the Claude Code Bridge for Firefox add-on installed?";
 
 const MIME_TYPES = {
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",

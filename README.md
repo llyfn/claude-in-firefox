@@ -1,4 +1,4 @@
-# Firefox Bridge for Claude Code
+# Claude Code Bridge for Firefox
 
 > An independent project. Not affiliated with, endorsed by, or sponsored by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.
 
@@ -26,7 +26,7 @@ The MCP server runs from this repository. The native host is the process Firefox
 2. `npm run install-host`. This copies the native host's runtime files (`native-host.js`, `framing.js`, `paths.js`, and a `package.json` with `"type": "module"`) into the host directory above, writes a `native-host` shell wrapper next to them, writes the native-messaging manifest `claude_firefox_bridge.json` (to `~/Library/Application Support/Mozilla/NativeMessagingHosts/` on macOS, `~/.mozilla/native-messaging-hosts/` on Linux) pointing at that wrapper, and prints a `claude mcp add` command.
 3. Run the printed `claude mcp add --scope user firefox -- …` command.
 4. In Firefox Developer Edition, open `about:config` and set `xpinstall.signatures.required` to `false`.
-5. `npm run build`, then in Firefox open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/firefox_bridge_for_claude_code-0.1.0.zip`.
+5. `npm run build`, then in Firefox open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/claude_code_bridge_for_firefox-0.1.0.zip`.
 6. Start a new Claude Code session and ask it to use the `firefox` tools. It should begin with `tabs_context` and `createIfEmpty: true`.
 
 After extension changes, run `npm run build` and reinstall the add-on. After changes under `host/src`, re-run `npm run install-host`, because Firefox runs a copy of the host. The MCP server always runs from the repository.
