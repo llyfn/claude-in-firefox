@@ -50,11 +50,24 @@ test("calls are forwarded with a client-prefixed id and results are routed back"
   client.socket.destroy();
 });
 
+test("calls use the session announced in hello and are ignored before it", async (t) => {
+  const h = await startHost();
+  t.after(() => h.host.close());
+  const client = await connectClient(h.socketPath);
+  client.send({ type: "call", id: 1, sessionId: "forged", tool: "t", args: {} });
+  client.send({ type: "hello", sessionId: "real" });
+  client.send({ type: "call", id: 2, sessionId: "forged", tool: "t", args: {} });
+  assert.deepEqual(await h.fromHost.next(), { type: "call", id: "1:2", sessionId: "real", tool: "t", args: {} });
+  client.socket.destroy();
+});
+
 test("results go only to the client that made the call", async (t) => {
   const h = await startHost();
   t.after(() => h.host.close());
   const a = await connectClient(h.socketPath);
   const b = await connectClient(h.socketPath);
+  a.send({ type: "hello", sessionId: "A" });
+  b.send({ type: "hello", sessionId: "B" });
   a.send({ type: "call", id: 1, sessionId: "A", tool: "t", args: {} });
   b.send({ type: "call", id: 1, sessionId: "B", tool: "t", args: {} });
   const forwarded = [await h.fromHost.next(), await h.fromHost.next()];
@@ -84,6 +97,7 @@ test("calls larger than the Firefox limit arrive as parts", async (t) => {
   t.after(() => h.host.close());
   const client = await connectClient(h.socketPath);
   const args = { files: [{ base64: "A".repeat(FIREFOX_SPLIT_THRESHOLD * 2) }] };
+  client.send({ type: "hello", sessionId: "s" });
   client.send({ type: "call", id: 1, sessionId: "s", tool: "file_upload", args });
   const first = await h.fromHost.next();
   assert.equal(first.type, "part");

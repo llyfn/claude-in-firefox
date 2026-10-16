@@ -22,7 +22,7 @@ export async function startNativeHost({ input, output, socketPath }) {
     clients.set(clientId, client);
     onMessages(socket, (msg) => {
       if (msg.type === "hello") client.sessionId = msg.sessionId;
-      else if (msg.type === "call") toFirefox({ type: "call", id: `${clientId}:${msg.id}`, sessionId: msg.sessionId, tool: msg.tool, args: msg.args });
+      else if (msg.type === "call" && client.sessionId) toFirefox({ type: "call", id: `${clientId}:${msg.id}`, sessionId: client.sessionId, tool: msg.tool, args: msg.args });
     });
     socket.on("error", () => {});
     socket.on("close", () => {
