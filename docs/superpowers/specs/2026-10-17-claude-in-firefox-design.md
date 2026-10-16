@@ -61,18 +61,26 @@ claude-in-firefox/
     manifest.json
     background/
       background.html   # <script type="module" src="main.js">
-      main.js           # native port, reconnect, message reassembly, tool dispatch
+      main.js           # wiring only
+      native.js         # native port with reconnect backoff
+      reassemble.js     # part-message reassembly
+      dispatch.js       # tool lookup, ownership check, per-tab serialization
       sessions.js       # session ↔ tab group ownership, opener-tab adoption
-      tools/*.js        # one module per tool family
-      capture.js        # screenshots, sizing, coordinate context
-      logs.js           # console + network ring buffers
       content.js        # sendMessage-to-frame helper with on-demand injection
+      activity.js       # indicator show/hide around tool calls
+      guard.js          # domain-change guard
+      tree.js           # tree rendering, find scoring, ref parsing
+      geometry.js       # screenshot sizing, coordinate mapping
+      capture.js        # screenshots, zoom, per-tab coordinate frames
+      logs.js           # console + network ring buffers
+      tools/*.js        # one module per tool family
     content/            # classic scripts, all attach to globalThis.__cf
       console-hook.js   # document_start, all frames
-      tree.js           # accessibility tree + ref map + find scoring
-      input.js          # synthetic mouse/keyboard + default-action emulation
+      dom.js            # shared helpers: native value setter, host guard
+      tree.js           # accessibility tree nodes + ref map
       form.js           # form_input, file_upload target handling
       text.js           # get_page_text
+      input.js          # synthetic mouse/keyboard + default-action emulation
       indicator.js      # glow + phantom cursor (top frame only)
       router.js         # runtime.onMessage → __cf op dispatch (loaded last)
   test/
@@ -131,7 +139,7 @@ All three links carry JSON objects. Link framing: native messaging uses Firefox'
 
 ### 4.3 Chunking (host → Firefox only)
 
-If `JSON.stringify(msg)` exceeds 900 000 bytes, the host sends `total = ceil(len / 900 000)` messages `{type:"part", msgId, index, total, data: <slice of the JSON string>}`. The extension buffers by `msgId` and `JSON.parse`s the joined string when all parts arrive. Buffers older than 60 s are discarded.
+If the UTF-8 size of `JSON.stringify(msg)` exceeds 900 000 bytes, the host slices that JSON string into chunks of 250 000 UTF-16 code units and sends one `{type:"part", msgId, index, total, data}` per chunk. Re-serialized inside a part, a code unit costs at most 3 bytes (6 for a lone surrogate at a cut), so every part stays under Firefox's 1 MiB limit. The extension buffers by `msgId` and `JSON.parse`s the joined string when all parts arrive. Buffers older than 60 s are discarded.
 
 ## 5. Tool surface
 
@@ -172,7 +180,7 @@ The only module that produces input. Operations: `click(target, button, count, m
 
 - Click sequence on the hit element: `pointerover, pointerenter, mouseover, mouseenter, pointermove, mousemove, pointerdown, mousedown`, then `focus()` on the nearest focusable ancestor if `mousedown` was not cancelled, then `pointerup, mouseup, click` (`detail` = 1..count). `dblclick` after the second click. `right_click` → `pointerdown/mousedown/pointerup/mouseup` with `button:2` then `contextmenu`. All events carry `clientX/Y`, `screenX/Y`, `button`, `buttons`, and modifier flags; `bubbles`, `cancelable`, `composed: true`.
 - `triple_click` additionally selects the containing paragraph/line text (input/textarea: `select()`; otherwise a `Range` over the block ancestor).
-- `target=_blank` links: before dispatch, a capture-phase `click` listener on `window` records `{href, defaultPrevented}` for anchors whose `target` is not `_self/_parent/_top`. If the click was not cancelled by the page, call `preventDefault()` and ask the background to open `href` in a new tab in the session group; the tool output appends `(link opened in new tab <id>)`.
+- New-tab links: those whose `target` is not `_self`/`_parent`/`_top`, middle clicks, and clicks with ctrl/cmd held. A bubble-phase `click`/`auxclick` listener on `window` runs after the page's own handlers and checks `defaultPrevented`. If the page did not cancel the click, it calls `preventDefault()` and the background opens `href` in a new tab in the session group. The tool output appends `(link opened in new tab <id>)`.
 - `hover`: `pointerover, pointerenter, mouseover, mouseenter, pointermove, mousemove`.
 - `left_click_drag`: `pointerdown/mousedown` at start; five interpolated `pointermove/mousemove` with `buttons:1`; `pointerup/mouseup` at end. If the start element (or ancestor) is `draggable`, also dispatch `dragstart` → `drag` → `dragenter`/`dragover` on the drop target → `drop` → `dragend`, sharing one `DataTransfer`.
 
@@ -214,7 +222,7 @@ The only module that produces input. Operations: `click(target, button, count, m
 - Viewport probe (content op): `innerWidth`, `innerHeight`, `devicePixelRatio`.
 - Target size: largest `(w, h)` with the viewport's aspect ratio such that `w ≤ 1568`, `h ≤ 1568`, and `ceil(w/28) · ceil(h/28) ≤ 1568`. Then multiply by the `scale` argument (default 1).
 - Capture: `browser.tabs.captureTab(tabId, {format:"jpeg", quality:75, scale: targetW / innerWidth})`. (`ImageDetails.scale` is relative to CSS pixels.) If the base64 exceeds 1 398 100 chars, retry with quality −10 down to 25.
-- Before capture: hide the indicator (content op, then wait one `requestAnimationFrame`); restore afterwards in `finally`.
+- Before capture: hide the indicator (content op); restore afterwards in `finally`. No paint wait: `captureTab` renders the document directly (spike probe Q1d confirms).
 - Coordinate context per tab: `{cssW, cssH, shotW, shotH}` from the last full-frame screenshot (the unscaled frame size when `scale < 1`). Model coordinates map as `x_css = round(x · cssW / shotW)`, same for y. Coordinates outside `[0, shotW] × [0, shotH]` → error asking for a fresh screenshot. With no screenshot yet, coordinates are treated as CSS pixels.
 - `zoom`: `captureTab` with `rect` = region mapped to CSS px and a scale sized to the target budget for that region; PNG; does not change the coordinate context.
 - Output text: `Screenshot <shotW>x<shotH> (jpeg)` (+ `, scaled <s>; coordinates use the <W>x<H> frame` when `scale < 1`).
@@ -225,12 +233,12 @@ The only module that produces input. Operations: `click(target, button, count, m
 Builds a node list, then renders text. Same text format as CiC so the model's expectations transfer:
 
 ```
-<indent>role "name" [ref_N] href="…" type="…" placeholder="…"
+<indent>role "name" [ref_N] (checked) (selected) (disabled) href="…" type="…" placeholder="…" value="…"
 ```
 
 - **Refs**: per-frame `Map<string, WeakRef<Element>>` + `WeakMap<Element, string>`; ids are `ref_<counter>` and stable for an element across calls. Refs created inside a non-top frame are prefixed `f<frameId>_ref_N` so the background can route them; top-frame refs stay `ref_N`. Dead entries pruned after each build.
 - **Roles**: explicit `role` attribute; else tag map (a[href]→link, button, select→combobox, textarea→textbox, input by type → textbox/checkbox/radio/button/searchbox/slider/spinbutton, h1–h6→heading, img→image, nav, main, header→banner, footer→contentinfo, section→region, article, aside→complementary, form, table, ul/ol→list, li→listitem, label, dialog, details→group, summary→button, option); else `generic`.
-- **Names** (first non-empty): `aria-labelledby` texts; `aria-label`; for inputs `<label for>` or wrapping `<label>` text; `placeholder`; `title`; `alt`; buttons/links/summary/headings → descendant text (whitespace-collapsed, 100 chars); input values < 50 chars; fallback direct text ≥ 3 chars. Sensitive fields → `[value redacted]` instead of any value.
+- **Names** (first non-empty): `aria-labelledby` texts; `aria-label`; for inputs `<label for>` or wrapping `<label>` text; `placeholder`; `title`; `alt`; buttons, links, summary, headings and other name-from-content roles → descendant text (whitespace-collapsed, 100 chars); submit/button input values; fallback direct text ≥ 3 chars. Label text excludes the control's own text. Text-field values are not names: they render as a separate `value="…"` (100 chars), shown as `[value redacted]` for sensitive fields.
 - **Sensitive**: `type` password/hidden, or `autocomplete` containing `current-password`, `new-password`, `one-time-code`, `cc-number`, `cc-csc`, `cc-exp`, `cc-exp-month`, `cc-exp-year`.
 - **Inclusion**: skip `script, style, meta, link, title, noscript, template` and the indicator host element. `filter:"interactive"` keeps interactive elements that are visible and intersect the viewport (unless `ref_id` given). `filter:"all"` keeps interactive, landmark/structural, named, or non-generic nodes, including hidden ones.
 - **Traversal**: depth-first over children; flatten unnamed generic wrappers (depth increases only for emitted nodes); descend into open shadow roots and same-origin iframe documents; cross-origin iframes are emitted as `iframe "<src>" [frame <frameId>]` and their contents are fetched from that frame and spliced in at that position. Cap 10 000 nodes; `max_chars` truncation at a line boundary with the same guidance note as CiC.
@@ -262,10 +270,19 @@ CiC's heuristic: first matching selector of `article, main, [class*="articleBody
 
 ### 6.7 javascript_tool (`background/tools/javascript.js`)
 
-1. Page realm first: `tabs.executeScript(tabId, {frameId: 0, code})` where `code` calls `window.eval(<JSON-quoted user code>)` inside a try/catch and passes the completion value through a serializer.
-2. If that throws a CSP eval violation, rerun the user code directly as the `executeScript` `code` (content-script realm, not subject to page CSP); page objects are then reachable via `window.wrappedJSObject`. The output is prefixed `[ran in extension sandbox: page CSP blocks eval; use window.wrappedJSObject for page globals]`.
-3. Top-level `await` → on `SyntaxError`, wrap as `(async () => { <code> })()` and note that `return` is needed.
-4. Promises are awaited (Firefox resolves promise completion values). Serializer: JSON with depth 5, strings > 1000 chars truncated, arrays > 100 items truncated, functions/DOM nodes described (`[Function name]`, `<tag#id.class>`), total output ≤ 51 200 chars. Errors → `isError` with message and stack head. Timeout 30 s.
+1. **Page realm first.** The `tabs.executeScript` code calls `window.eval` on a small program that runs in the page. That program indirect-evals the user code, awaits the result, and serializes it in the page. It then hands the JSON back through a `CustomEvent` with a string `detail`. A string crosses the content-script boundary unchanged; page objects and page Promises do not reliably.
+2. **Sandbox fallback.** If `window.eval` itself throws (the page CSP forbids eval), rerun the user code directly as the `executeScript` `code`, in the content-script realm, which page CSP does not cover.
+   - Page objects are then reachable via `window.wrappedJSObject`.
+   - The completion value must be structured-cloneable.
+   - The output is prefixed `[ran in extension sandbox: page CSP blocks eval; use window.wrappedJSObject for page globals]`.
+3. **Top-level `await` or `return`.** A `SyntaxError` about either → rerun wrapped as `(async () => { <code> })()`, with a note that `return` produces the value.
+4. **Serializer.**
+   - JSON with depth 5.
+   - Strings over 1000 chars and arrays over 100 items are truncated.
+   - Functions and DOM nodes are described (`[Function name]`, `<tag#id.class>`).
+   - Total output ≤ 51 200 chars.
+   - Errors → `isError` with the message and the head of the stack.
+   - Execution timeout 25 s, inside the MCP server's 30 s.
 
 Exact realm behavior is verified in the spike; the spec's fallback chain stands either way.
 
@@ -278,7 +295,7 @@ Exact realm behavior is verified in the spike; the spec's fallback chain stands 
 
 ### 6.9 Indicator (`content/indicator.js`, top frame only)
 
-- Host element `<claude-firefox-indicator>` on `documentElement` with a closed shadow root: fixed full-viewport inset orange glow (`pointer-events:none`, max z-index, 2 s pulse, disabled under `prefers-reduced-motion`) and a phantom cursor SVG moved via `transform` to the last pointer target.
+- Host element `<claude-firefox-indicator>` on `documentElement` with a closed shadow root: fixed full-viewport inset orange glow (`pointer-events:none`, max z-index, 2 s pulse, disabled under `prefers-reduced-motion`) and a phantom cursor SVG moved via `transform` to the last pointer target. Styles are set through CSSOM and the pulse uses Web Animations, so a strict page `style-src` cannot block them.
 - Shown when a tool starts on the tab; hidden 2 s after the last tool on that tab finishes; hidden around screenshots; re-asserted after navigation (`tabs.onUpdated` status complete) while a session is active on the tab.
 
 ### 6.10 Content-script plumbing (`background/content.js`, `content/router.js`)
@@ -302,11 +319,11 @@ No domain is ever refused. The README documents Firefox's own `extensions.webext
   "name": "Claude in Firefox",
   "version": "0.1.0",
   "browser_specific_settings": { "gecko": { "id": "claude-firefox-bridge@local", "strict_min_version": "139.0" } },
-  "permissions": ["nativeMessaging", "tabs", "tabGroups", "<all_urls>", "webRequest", "webNavigation"],
+  "permissions": ["nativeMessaging", "tabs", "tabGroups", "<all_urls>", "webRequest", "webNavigation", "clipboardWrite"],
   "background": { "page": "background/background.html", "persistent": true },
   "content_scripts": [
     { "matches": ["<all_urls>"], "all_frames": true, "match_about_blank": true, "run_at": "document_start",
-      "js": ["content/console-hook.js", "content/tree.js", "content/input.js", "content/form.js", "content/text.js", "content/router.js"] },
+      "js": ["content/console-hook.js", "content/dom.js", "content/tree.js", "content/form.js", "content/text.js", "content/input.js", "content/router.js"] },
     { "matches": ["<all_urls>"], "run_at": "document_idle", "js": ["content/indicator.js"] }
   ]
 }
