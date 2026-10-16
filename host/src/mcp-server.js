@@ -153,4 +153,5 @@ export function createMcpServer({ bridge }) {
 if (isMain(import.meta.url)) {
   const bridge = new BridgeClient({ socketPath: SOCKET_PATH, sessionId: randomUUID() });
   await createMcpServer({ bridge }).connect(new StdioServerTransport());
+  process.stdin.on("end", () => process.exit(0));
 }
