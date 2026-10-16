@@ -12,7 +12,7 @@
       "all_frames": true,
       "match_about_blank": true,
       "run_at": "document_start",
-      "js": ["content/tree.js", "content/router.js"]
+      "js": ["content/dom.js", "content/tree.js", "content/form.js", "content/text.js", "content/router.js"]
     }
   ]
 }

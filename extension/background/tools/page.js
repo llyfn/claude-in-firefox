@@ -1,4 +1,5 @@
-import { formatFind, parseRef, renderTree, scoreNodes } from "../tree.js";
+import { guardFor } from "../guard.js";
+import { formatFind, parseRef, renderTree, scoreNodes, truncateAtLine } from "../tree.js";
 
 const prefixFor = (frameId) => (frameId ? `f${frameId}_` : "");
 
@@ -26,7 +27,7 @@ async function expandFrames(content, tabId, nodes, options) {
   return out;
 }
 
-export function pageTools({ content }) {
+export function pageTools({ api, content }) {
   return {
     read_page: {
       tabScoped: true,
@@ -44,6 +45,23 @@ export function pageTools({ content }) {
         if (!query) throw new Error("find: query is required");
         const { nodes } = await collectTree(content, tab.id, { filter: "all", depth: 100, refId: null });
         return formatFind(scoreNodes(nodes, query), query);
+      },
+    },
+    get_page_text: {
+      tabScoped: true,
+      async run({ tab, args }) {
+        const page = await content.call(tab.id, 0, "text.pageText");
+        if (page.text.length < 10) return "No text content found. The page may consist mostly of images, video or canvas.";
+        const text = truncateAtLine(page.text, args.max_chars ?? 50_000, "Pass a larger max_chars, or use read_page with a ref_id to focus on a smaller section.");
+        return `Title: ${page.title}\nURL: ${page.url}\nSource element: <${page.tag}>\n---\n${text}`;
+      },
+    },
+    form_input: {
+      tabScoped: true,
+      async run({ tab, args }) {
+        const { frameId, ref } = parseRef(args.ref);
+        const guard = await guardFor(api, tab, frameId, "form_input");
+        return content.call(tab.id, frameId, "form.setValue", { ref, value: args.value, guard });
       },
     },
   };

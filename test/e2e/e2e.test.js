@@ -118,3 +118,44 @@ describe("reading pages", () => {
     assert.match(text, /^Found \d+ element\(s\) matching "subscribe button", best first:\n\n- ref_\d+: button "Subscribe"/);
   });
 });
+
+describe("forms and page text", () => {
+  const refFor = (tree, role, name) => new RegExp(`${role} "${name}" \\[(ref_\\d+)\\]`).exec(tree)[1];
+  let tabId;
+  let tree;
+  const log = async () => textOf(await h.call("get_page_text", { tabId }));
+
+  before(async () => {
+    tabId = await openTab("/forms.html");
+    tree = textOf(await h.call("read_page", { tabId }));
+  });
+
+  test("form_input updates a React-style controlled input", async () => {
+    assert.equal(textOf(await h.call("form_input", { tabId, ref: refFor(tree, "textbox", "Name"), value: "Ada" })), 'Set text value to "Ada" (previous: "old")');
+    assert.match(await log(), /name changed to Ada/);
+  });
+
+  test("form_input handles select, checkbox, radio, number, date, textarea and contenteditable", async () => {
+    const set = (role, name, value) => h.call("form_input", { tabId, ref: refFor(tree, role, name), value });
+    await set("combobox", "Country", "Korea");
+    await set("checkbox", "I agree", true);
+    await set("radio", "Large", true);
+    await set("spinbutton", "Quantity", 4);
+    await set("textbox", "Date", "2026-10-17");
+    await set("textbox", "Bio", "Hello");
+    await set("generic", "Notes", "Final notes");
+    const text = await log();
+    for (const line of ["country change kr", "agree change true", "size l", "qty change 4", "when change 2026-10-17", "bio change Hello", "notes input"]) assert.match(text, new RegExp(line));
+  });
+
+  test("form_input never echoes password values", async () => {
+    assert.equal(textOf(await h.call("form_input", { tabId, ref: refFor(tree, "textbox", "Secret"), value: "s3cret" })), "Set password value to [redacted] (previous: [redacted])");
+  });
+
+  test("get_page_text prefers the article element", async () => {
+    const articleTab = await openTab("/article.html");
+    const text = textOf(await h.call("get_page_text", { tabId: articleTab }));
+    assert.match(text, /^Title: Article page\nURL: http:\/\/127\.0\.0\.1:\d+\/article\.html\nSource element: <article>\n---\nHeadline/);
+    assert.doesNotMatch(text, /Site navigation|Copyright footer/);
+  });
+});

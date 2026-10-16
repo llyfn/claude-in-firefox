@@ -1,0 +1,24 @@
+<!doctype html><title>Forms</title>
+<label for="name">Name</label><input id="name" value="old">
+<label for="country">Country</label><select id="country"><option value="us">United States</option><option value="kr">Korea</option></select>
+<label><input type="checkbox" id="agree"> I agree</label>
+<label><input type="radio" name="size" value="s"> Small</label><label><input type="radio" name="size" value="l"> Large</label>
+<label for="qty">Quantity</label><input id="qty" type="number">
+<label for="when">Date</label><input id="when" type="date">
+<label for="bio">Bio</label><textarea id="bio"></textarea>
+<div id="notes" contenteditable="true" aria-label="Notes">draft</div>
+<label for="secret">Secret</label><input id="secret" type="password">
+<pre id="log"></pre>
+<script>
+  const log = (m) => { document.getElementById("log").textContent += m + "\n"; };
+  const name = document.getElementById("name");
+  const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  let tracked = name.value;
+  Object.defineProperty(name, "value", { configurable: true, get() { return native.get.call(this); }, set(v) { tracked = String(v); native.set.call(this, v); } });
+  name.addEventListener("input", () => { const now = native.get.call(name); if (now !== tracked) { tracked = now; log("name changed to " + now); } });
+  for (const id of ["country", "agree", "qty", "when", "bio"]) {
+    document.getElementById(id).addEventListener("change", (e) => log(id + " change " + (e.target.type === "checkbox" ? e.target.checked : e.target.value)));
+  }
+  document.querySelectorAll("input[name=size]").forEach((r) => r.addEventListener("change", () => log("size " + r.value)));
+  document.getElementById("notes").addEventListener("input", () => log("notes input"));
+</script>

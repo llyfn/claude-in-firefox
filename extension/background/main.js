@@ -17,7 +17,7 @@ api.tabs.onCreated.addListener((tab) => {
 
 const tools = {
   ...tabTools({ api, sessions }),
-  ...pageTools({ content }),
+  ...pageTools({ api, content }),
 };
 
 let native = null;
