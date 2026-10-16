@@ -17,7 +17,7 @@
   };
   const INPUT_ROLES = { checkbox: "checkbox", radio: "radio", button: "button", submit: "button", reset: "button", image: "button", file: "button", search: "searchbox", range: "slider", number: "spinbutton" };
   const NON_TEXT_INPUTS = new Set(["checkbox", "radio", "button", "submit", "reset", "image", "file", "hidden"]);
-  const SENSITIVE_AUTOCOMPLETE = /(?:^|\s)(?:current-password|new-password|one-time-code|cc-[a-z-]+)(?:\s|$)/;
+  const SENSITIVE_AUTOCOMPLETE = /(?:^|\s)(?:current-password|new-password|one-time-code|cc-[a-z-]+)(?:\s|$)/i;
 
   const refs = new Map();
   const refOf = new WeakMap();

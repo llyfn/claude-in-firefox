@@ -22,11 +22,11 @@ test("roles, names, refs and attributes follow the line format", () => {
 test("password, one-time-code and card values are redacted and hidden inputs skipped", () => {
   const w = loadContent(`<input type="password" value="hunter2"><input autocomplete="one-time-code" value="123456">
     <input autocomplete="cc-number" value="4111111111111111"><input type="hidden" value="csrf-token">
-    <input autocomplete="billing cc-name" value="Ada Lovelace">
+    <input autocomplete="billing cc-name" value="Ada Lovelace"><input autocomplete="CC-Number" value="5555444433332222">
     <select autocomplete="cc-exp-month"><option selected>01</option><option>02</option></select>`);
   const text = render(w);
-  for (const secret of ["hunter2", "123456", "4111", "csrf-token", "Ada Lovelace"]) assert.ok(!text.includes(secret), secret);
-  assert.equal(text.match(/value="\[value redacted\]"/g).length, 4);
+  for (const secret of ["hunter2", "123456", "4111", "csrf-token", "Ada Lovelace", "5555"]) assert.ok(!text.includes(secret), secret);
+  assert.equal(text.match(/value="\[value redacted\]"/g).length, 5);
   assert.match(text, /combobox "\[value redacted\]" \[ref_\d+\]/);
   assert.doesNotMatch(text, /option/);
 });
