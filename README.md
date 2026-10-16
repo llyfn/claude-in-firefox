@@ -18,7 +18,7 @@ The MCP server runs from this repository. The native host is the process Firefox
 
 - macOS, Node ≥ 20 to run, Claude Code
 - Node ≥ 22.22 for development and tests (jsdom 30 requires it)
-- Firefox Developer Edition 139 or newer: `brew install --cask firefox@developer-edition`
+- Firefox Developer Edition 140 or newer: `brew install --cask firefox@developer-edition`
 
 ## Install
 

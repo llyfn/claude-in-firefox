@@ -26,7 +26,7 @@ Let Claude Code drive the user's everyday Firefox — real profile, real logins 
 
 ## 2. Constraints
 
-- Firefox Developer Edition ≥ 139 on macOS (the user's machine). 139 is the first release with both `tabs.group()` and the `tabGroups` API.
+- Firefox ≥ 140. 139 is the first release with both `tabs.group()` and the `tabGroups` API; 140 is the first with Firefox's built-in data-collection consent, which the `data_collection_permissions` manifest key (required for signing) relies on.
 - Unsigned extension installed permanently with `xpinstall.signatures.required=false`.
 - WebExtension Manifest V2 (persistent background page). Reasons: a long-lived native port with no event-page lifecycle; Firefox continues to support MV2.
 - Firefox gives extensions no `chrome.debugger` equivalent → no CDP, no trusted input events.
