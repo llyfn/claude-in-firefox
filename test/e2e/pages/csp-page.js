@@ -1,0 +1,1 @@
+window.pageVar = 42;

@@ -159,3 +159,35 @@ describe("forms and page text", () => {
     assert.doesNotMatch(text, /Site navigation|Copyright footer/);
   });
 });
+
+describe("javascript_tool", () => {
+  const js = (tabId, text) => h.call("javascript_tool", { tabId, action: "javascript_exec", text });
+
+  test("returns values, awaits promises and describes DOM nodes", async () => {
+    const tabId = await openTab("/basic.html");
+    assert.equal(textOf(await js(tabId, "document.title")), "Basic page");
+    assert.equal(textOf(await js(tabId, "Promise.resolve(6 * 7)")), "42");
+    assert.equal(textOf(await js(tabId, "document.querySelector('h1')")), "<h1>");
+  });
+
+  test("reports page errors as tool errors", async () => {
+    const tabId = await openTab("/basic.html");
+    const result = await js(tabId, "nope.value");
+    assert.equal(result.isError, true);
+    assert.match(textOf(result), /ReferenceError/);
+  });
+
+  test("code with top-level await or return is wrapped", async () => {
+    const tabId = await openTab("/basic.html");
+    const text = textOf(await js(tabId, "const n = await Promise.resolve(5); return n * 2"));
+    assert.match(text, /wrapped in an async function/);
+    assert.match(text, /10$/);
+  });
+
+  test("strict-CSP pages fall back to the extension sandbox", async () => {
+    const tabId = await openTab("/csp-page.html");
+    const text = textOf(await js(tabId, "window.wrappedJSObject.pageVar"));
+    assert.match(text, /^\[ran in extension sandbox/);
+    assert.match(text, /42$/);
+  });
+});
