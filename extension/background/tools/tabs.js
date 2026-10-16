@@ -66,14 +66,14 @@ async function tabShowing(api, tabId, url) {
   return tab;
 }
 
-// A page's load event can fire before its iframes are registered or have their final frame ids; frame-addressed tools need the frame list to have stopped changing.
-async function framesSettled(api, tabId) {
-  let previous = null;
+// Out-of-process iframes register their frame ids after the top-level load event.
+export async function framesSettled(api, tabId) {
+  const counted = await api.tabs.executeScript(tabId, { frameId: 0, code: 'document.querySelectorAll("iframe, frame").length' }).catch(() => null);
+  const expected = counted?.[0];
+  if (!(expected > 0)) return;
   for (let waited = 0; waited < 1000; waited += 50) {
-    const frames = (await api.webNavigation.getAllFrames({ tabId })) ?? [];
-    const signature = frames.map((f) => `${f.frameId}:${f.url}`).join("|");
-    if (signature === previous) return;
-    previous = signature;
+    const frames = await api.webNavigation.getAllFrames({ tabId }).catch(() => null);
+    if (!frames || frames.filter((f) => f.parentFrameId === 0).length >= expected) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
