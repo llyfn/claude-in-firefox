@@ -1,4 +1,6 @@
-# Claude in Firefox
+# Firefox Bridge for Claude Code
+
+> An independent project. Not affiliated with, endorsed by, or sponsored by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.
 
 Drive your everyday Firefox from Claude Code. A Firefox extension plus a local MCP bridge gives Claude browser tools modeled on Claude in Chrome: navigate, click, type, take screenshots, read the page, fill forms, and read console and network logs. It works in your real profile, with your logins, and it refuses no domain.
 
@@ -24,7 +26,7 @@ The MCP server runs from this repository. The native host is the process Firefox
 2. `npm run install-host`. This copies the native host's runtime files (`native-host.js`, `framing.js`, `paths.js`, and a `package.json` with `"type": "module"`) into `~/Library/Application Support/claude-in-firefox/host/`, writes the native-messaging manifest to `~/Library/Application Support/Mozilla/NativeMessagingHosts/claude_firefox_bridge.json` pointing at the wrapper there, and prints a `claude mcp add` command.
 3. Run the printed `claude mcp add --scope user firefox -- …` command.
 4. In Firefox Developer Edition, open `about:config` and set `xpinstall.signatures.required` to `false`.
-5. `npm run build`, then in Firefox open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/claude_in_firefox-0.1.0.zip`.
+5. `npm run build`, then in Firefox open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/firefox_bridge_for_claude_code-0.1.0.zip`.
 6. Start a new Claude Code session and ask it to use the `firefox` tools. It should begin with `tabs_context` and `createIfEmpty: true`.
 
 After extension changes, run `npm run build` and reinstall the add-on. After changes under `host/src`, re-run `npm run install-host`, because Firefox runs a copy of the host. The MCP server always runs from the repository.
@@ -45,7 +47,7 @@ After extension changes, run `npm run build` and reinstall the add-on. After cha
 
 ## Safety
 
-- **No domain blocking.** Claude in Chrome checks every URL against Anthropic's site-category service and enterprise blocklists. This extension does neither, and it shows no per-site permission prompts. Claude Code's own permission settings are the only gate.
+- **No domain blocking.** Unlike Claude in Chrome, this extension blocks no sites and shows no per-site permission prompts. Claude Code's own permission settings are the only gate.
 - **Firefox's own restrictions still apply.** Firefox keeps every extension off its privileged pages (`about:*`, other extensions' pages) and off the domains listed in the `extensions.webextensions.restrictedDomains` pref, such as addons.mozilla.org. To allow those domains, clear that pref and set `privacy.resistFingerprinting.block_mozAddonManager` to `true` in `about:config`. The installer never changes Firefox prefs.
 - **Two guards are kept:**
   - Password, one-time-code and payment-card field values show as `[value redacted]` in `read_page` and as `[redacted]` in `form_input` output. Nothing else is redacted: screenshots and zoom, and console and network logs can all show sensitive values.

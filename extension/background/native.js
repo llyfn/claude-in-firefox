@@ -13,7 +13,7 @@ export function connectNative({ api, name, onMessage }) {
       if (full) onMessage(full);
     });
     port.onDisconnect.addListener((p) => {
-      console.warn(`Claude in Firefox: native host disconnected (${p.error?.message ?? "closed"}); retrying in ${delay / 1000}s`);
+      console.warn(`Firefox Bridge for Claude Code: native host disconnected (${p.error?.message ?? "closed"}); retrying in ${delay / 1000}s`);
       port = null;
       setTimeout(connect, delay);
       delay = Math.min(delay * 2, 30_000);

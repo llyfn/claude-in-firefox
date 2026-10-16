@@ -1,8 +1,9 @@
 {
   "manifest_version": 2,
-  "name": "Claude in Firefox",
+  "name": "Firefox Bridge for Claude Code",
   "version": "0.1.0",
-  "description": "Lets Claude Code drive this Firefox through a local MCP bridge.",
+  "description": "Lets Claude Code drive this Firefox through a local MCP bridge. Not affiliated with Anthropic.",
+  "homepage_url": "https://github.com/llyfn/claude-in-firefox",
   "browser_specific_settings": { "gecko": { "id": "claude-firefox-bridge@local", "strict_min_version": "139.0" } },
   "permissions": ["nativeMessaging", "tabs", "tabGroups", "<all_urls>", "webRequest", "webNavigation", "clipboardWrite"],
   "background": { "page": "background/background.html", "persistent": true },

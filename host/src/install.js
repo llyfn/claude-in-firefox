@@ -31,7 +31,7 @@ export function install({ homeDir = os.homedir(), repoDir = REPO_DIR, nodePath =
 
   const manifestPath = nativeManifestPath(homeDir);
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-  const manifest = { name: HOST_NAME, description: "Claude in Firefox bridge", path: wrapperPath, type: "stdio", allowed_extensions: [EXTENSION_ID] };
+  const manifest = { name: HOST_NAME, description: "Firefox Bridge for Claude Code", path: wrapperPath, type: "stdio", allowed_extensions: [EXTENSION_ID] };
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   return {

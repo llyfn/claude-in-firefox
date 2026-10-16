@@ -23,7 +23,7 @@ test("install copies the native host under Application Support and writes the ma
   assert.equal(result.manifestPath, path.join(home, "Library/Application Support/Mozilla/NativeMessagingHosts/claude_firefox_bridge.json"));
   assert.deepEqual(JSON.parse(fs.readFileSync(result.manifestPath, "utf8")), {
     name: "claude_firefox_bridge",
-    description: "Claude in Firefox bridge",
+    description: "Firefox Bridge for Claude Code",
     path: result.wrapperPath,
     type: "stdio",
     allowed_extensions: ["claude-firefox-bridge@local"],
