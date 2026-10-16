@@ -38,7 +38,7 @@
     const original = page.console[level];
     exportFunction(function consoleProxy(...args) {
       record(level, args.map(format).join(" "));
-      return original.apply(this, cloneInto(args, page, { wrapReflectors: true }));
+      return original.call(this, ...args);
     }, page.console, { defineAs: level });
   }
   window.addEventListener("error", (event) => record("exception", `${event.message} (${event.filename}:${event.lineno}:${event.colno})`));

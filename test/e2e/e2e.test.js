@@ -302,6 +302,7 @@ describe("console and network", () => {
     await eventually(async () => {
       const all = textOf(await h.call("read_console_messages", { tabId }));
       assert.match(all, /\[LOG\] \(http:[^)]+\) page loaded 42/);
+      assert.match(all, /\[LOG\] .*complex/);
       assert.match(all, /\[ERROR\] .*Error: boom on load/);
       assert.match(all, /\[EXCEPTION\] .*async explosion/);
     });

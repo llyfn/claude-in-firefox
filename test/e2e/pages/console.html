@@ -2,6 +2,7 @@
 <button onclick="console.warn('button warn', { n: 1 }); fetch('/api/ping')">Log and fetch</button>
 <script>
   console.log("page loaded", 42);
+  console.log("complex", { handler() {}, el: document.body, n: 2 });
   console.error(new Error("boom on load"));
   setTimeout(() => { throw new Error("async explosion"); }, 0);
 </script>
