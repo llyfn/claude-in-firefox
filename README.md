@@ -12,18 +12,18 @@ Claude Code ──MCP stdio──▶ host/src/mcp-server.js ──unix socket─
 
 Each Claude Code session gets its own Firefox tab group (`Claude · xxxx`) and can only touch tabs inside it. An orange glow and a phantom cursor show which tab Claude is working in.
 
-The MCP server runs from this repository. The native host is the process Firefox launches, and it runs from a copy under `~/Library/Application Support/claude-in-firefox/host/`, because macOS privacy protection blocks processes that Firefox launches from reading `~/Desktop`, `~/Documents` and `~/Downloads`.
+The MCP server runs from this repository. The native host is the process Firefox launches, and it runs from a copy outside the repository (`~/Library/Application Support/claude-in-firefox/host/` on macOS, `~/.local/share/claude-in-firefox/host/` on Linux), because macOS privacy protection blocks processes that Firefox launches from reading `~/Desktop`, `~/Documents` and `~/Downloads`.
 
 ## Requirements
 
-- macOS, Node ≥ 20 to run, Claude Code
+- macOS or Linux, Node ≥ 20 to run, Claude Code. On Linux, use a Firefox installed from Mozilla or your distribution's package; the Snap and Flatpak builds keep native-messaging hosts elsewhere and are not supported.
 - Node ≥ 22.22 for development and tests (jsdom 30 requires it)
 - Firefox Developer Edition 140 or newer: `brew install --cask firefox@developer-edition`
 
 ## Install
 
 1. `npm install`
-2. `npm run install-host`. This copies the native host's runtime files (`native-host.js`, `framing.js`, `paths.js`, and a `package.json` with `"type": "module"`) into `~/Library/Application Support/claude-in-firefox/host/`, writes the native-messaging manifest to `~/Library/Application Support/Mozilla/NativeMessagingHosts/claude_firefox_bridge.json` pointing at the wrapper there, and prints a `claude mcp add` command.
+2. `npm run install-host`. This copies the native host's runtime files (`native-host.js`, `framing.js`, `paths.js`, and a `package.json` with `"type": "module"`) into the host directory above, writes a `native-host` shell wrapper next to them, writes the native-messaging manifest `claude_firefox_bridge.json` (to `~/Library/Application Support/Mozilla/NativeMessagingHosts/` on macOS, `~/.mozilla/native-messaging-hosts/` on Linux) pointing at that wrapper, and prints a `claude mcp add` command.
 3. Run the printed `claude mcp add --scope user firefox -- …` command.
 4. In Firefox Developer Edition, open `about:config` and set `xpinstall.signatures.required` to `false`.
 5. `npm run build`, then in Firefox open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/firefox_bridge_for_claude_code-0.1.0.zip`.
@@ -77,7 +77,7 @@ npm run build     # packages the extension into web-ext-artifacts/
 
 Development and tests need Node ≥ 22.22. E2E needs Firefox Developer Edition and a prior `npm run install-host`. Do not run it while another Firefox Developer Edition instance has the extension installed: only one native host can own the bridge socket.
 
-E2E uses `FIREFOX_BIN` if set, otherwise `/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox`.
+E2E uses `FIREFOX_BIN` if set, otherwise `/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox`; on Linux set `FIREFOX_BIN` to your Firefox Developer Edition binary.
 
 Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`.
 

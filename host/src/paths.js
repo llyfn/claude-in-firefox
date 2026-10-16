@@ -9,8 +9,24 @@ export const EXTENSION_ID = "claude-firefox-bridge@local";
 // Fixed under /tmp rather than $TMPDIR: Firefox and Claude Code start the two ends with different environments.
 export const SOCKET_PATH = `/tmp/claude-firefox-bridge-${os.userInfo().uid}/bridge.sock`;
 
-export function nativeManifestPath(homeDir = os.homedir()) {
-  return path.join(homeDir, "Library/Application Support/Mozilla/NativeMessagingHosts", `${HOST_NAME}.json`);
+export function installLocations(homeDir = os.homedir(), platform = process.platform) {
+  if (platform === "darwin") {
+    return {
+      manifestDir: path.join(homeDir, "Library/Application Support/Mozilla/NativeMessagingHosts"),
+      hostDir: path.join(homeDir, "Library/Application Support/claude-in-firefox/host"),
+    };
+  }
+  if (platform === "linux") {
+    return {
+      manifestDir: path.join(homeDir, ".mozilla/native-messaging-hosts"),
+      hostDir: path.join(homeDir, ".local/share/claude-in-firefox/host"),
+    };
+  }
+  throw new Error(`Unsupported platform "${platform}": the installer supports macOS and Linux.`);
+}
+
+export function nativeManifestPath(homeDir = os.homedir(), platform = process.platform) {
+  return path.join(installLocations(homeDir, platform).manifestDir, `${HOST_NAME}.json`);
 }
 
 export async function ensureSocketDir(dir) {

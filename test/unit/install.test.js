@@ -10,7 +10,7 @@ const REPO = fileURLToPath(new URL("../../", import.meta.url));
 
 test("install copies the native host under Application Support and writes the manifest, wrapper and claude mcp add command", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "cfb-home-"));
-  const result = install({ homeDir: home, repoDir: REPO, nodePath: "/opt/node/bin/node" });
+  const result = install({ homeDir: home, repoDir: REPO, nodePath: "/opt/node/bin/node", platform: "darwin" });
 
   const hostDir = path.join(home, "Library/Application Support/claude-in-firefox/host");
   assert.equal(result.hostDir, hostDir);
@@ -46,4 +46,18 @@ test("stableNodePath returns the first executable node on PATH without resolving
   assert.equal(stableNodePath({ PATH: ["relative", path.join(root, "missing"), noExec, stable, real].join(path.delimiter) }), path.join(stable, "node"));
   assert.equal(stableNodePath({ PATH: path.join(root, "missing") }), process.execPath);
   assert.equal(stableNodePath({}), process.execPath);
+});
+
+test("on Linux the host goes under ~/.local/share and the manifest under ~/.mozilla", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "cfb-home-"));
+  const result = install({ homeDir: home, repoDir: REPO, nodePath: "/usr/bin/node", platform: "linux" });
+  assert.equal(result.hostDir, path.join(home, ".local/share/claude-in-firefox/host"));
+  assert.equal(result.manifestPath, path.join(home, ".mozilla/native-messaging-hosts/claude_firefox_bridge.json"));
+  assert.equal(JSON.parse(fs.readFileSync(result.manifestPath, "utf8")).path, path.join(home, ".local/share/claude-in-firefox/host/native-host"));
+});
+
+test("unsupported platforms are refused before anything is written", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "cfb-home-"));
+  assert.throws(() => install({ homeDir: home, repoDir: REPO, nodePath: "node", platform: "win32" }), /Unsupported platform "win32": the installer supports macOS and Linux/);
+  assert.deepEqual(fs.readdirSync(home), []);
 });

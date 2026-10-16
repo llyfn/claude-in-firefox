@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { EXTENSION_ID, HOST_NAME, isMain, nativeManifestPath } from "./paths.js";
+import { EXTENSION_ID, HOST_NAME, installLocations, isMain, nativeManifestPath } from "./paths.js";
 
 const REPO_DIR = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -19,9 +19,9 @@ export function stableNodePath(env = process.env) {
   return process.execPath;
 }
 
-export function install({ homeDir = os.homedir(), repoDir = REPO_DIR, nodePath = stableNodePath() } = {}) {
-  // macOS privacy protection stops processes Firefox launches from reading ~/Desktop, ~/Documents and ~/Downloads, so the host runs from a copy under Application Support, launched with an absolute node path because Firefox gives hosts a minimal PATH.
-  const hostDir = path.join(homeDir, "Library/Application Support/claude-in-firefox/host");
+export function install({ homeDir = os.homedir(), repoDir = REPO_DIR, nodePath = stableNodePath(), platform = process.platform } = {}) {
+  // macOS privacy protection stops processes Firefox launches from reading ~/Desktop, ~/Documents and ~/Downloads, so the host runs from a copy outside the repository, launched with an absolute node path because Firefox gives hosts a minimal PATH.
+  const { hostDir } = installLocations(homeDir, platform);
   fs.mkdirSync(hostDir, { recursive: true });
   for (const file of ["native-host.js", "framing.js", "paths.js"]) fs.copyFileSync(path.join(repoDir, "host/src", file), path.join(hostDir, file));
   fs.writeFileSync(path.join(hostDir, "package.json"), '{ "type": "module" }\n');
@@ -29,7 +29,7 @@ export function install({ homeDir = os.homedir(), repoDir = REPO_DIR, nodePath =
   fs.writeFileSync(wrapperPath, `#!/bin/sh\nexec "${nodePath}" "${path.join(hostDir, "native-host.js")}" "$@"\n`);
   fs.chmodSync(wrapperPath, 0o755);
 
-  const manifestPath = nativeManifestPath(homeDir);
+  const manifestPath = nativeManifestPath(homeDir, platform);
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
   const manifest = { name: HOST_NAME, description: "Firefox Bridge for Claude Code", path: wrapperPath, type: "stdio", allowed_extensions: [EXTENSION_ID] };
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
