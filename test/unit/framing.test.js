@@ -41,9 +41,16 @@ test("small messages are not split", () => {
 });
 
 test("large messages split into parts under 1 MiB that survive the wire and reassemble exactly", () => {
-  const msg = { type: "call", args: { blob: "x".repeat(FIREFOX_SPLIT_THRESHOLD) + 'é한👋"\\'.repeat(200_000) } };
-  const parts = splitForFirefox(msg, 7);
+  const endsWithHighSurrogate = (part) => part.data.charCodeAt(part.data.length - 1) >= 0xd800 && part.data.charCodeAt(part.data.length - 1) <= 0xdbff;
+  let msg;
+  let parts;
+  for (let pad = 0; pad < 8; pad++) {
+    msg = { type: "call", args: { blob: "x".repeat(pad) + 'é한👋"\\'.repeat(200_000) } };
+    parts = splitForFirefox(msg, 7);
+    if (parts.slice(0, -1).some(endsWithHighSurrogate)) break;
+  }
   assert.ok(parts.length > 1);
+  assert.ok(parts.slice(0, -1).some(endsWithHighSurrogate), "a part boundary falls between a surrogate pair");
   for (const part of parts) {
     assert.equal(part.type, "part");
     assert.equal(part.msgId, 7);
