@@ -89,3 +89,34 @@ test("scroll moves the nearest scrollable ancestor unless the wheel event is can
   w.__cf.input.scroll({ x: 10, y: 10, dx: 0, dy: 300 });
   assert.deepEqual(scrolled, [300]);
 });
+
+test("click and scroll apply the domain guard but hover does not", () => {
+  const w = setup(`<button>Target</button>`, { url: "https://evil.test/" });
+  const button = w.document.querySelector("button");
+  const clicks = [];
+  button.addEventListener("click", () => clicks.push("click"));
+  const guard = { host: "good.test", action: "left_click" };
+  assert.throws(() => w.__cf.input.click({ ref: refOf(w, "Target"), guard }), /different domain during left_click/);
+  assert.deepEqual(clicks, []);
+  stubElementFromPoint(w, () => button);
+  assert.throws(() => w.__cf.input.scroll({ x: 10, y: 10, dx: 0, dy: 100, guard: { host: "good.test", action: "scroll" } }), /different domain during scroll/);
+  assert.doesNotThrow(() => w.__cf.input.hover({ ref: refOf(w, "Target") }));
+});
+
+test("triple click selects the input's text", () => {
+  const w = setup(`<label for="t">Title</label><input id="t" value="hello world">`);
+  const input = w.document.getElementById("t");
+  w.__cf.input.click({ ref: refOf(w, "Title"), count: 3 });
+  assert.equal(input.selectionStart, 0);
+  assert.equal(input.selectionEnd, 11);
+});
+
+test("a cancelled mousedown does not move focus", () => {
+  const w = setup(`<input id="a"><button id="b">Go</button>`);
+  const a = w.document.getElementById("a");
+  const b = w.document.getElementById("b");
+  a.focus();
+  b.addEventListener("mousedown", (e) => e.preventDefault());
+  w.__cf.input.click({ ref: refOf(w, "Go") });
+  assert.equal(w.document.activeElement, a);
+});
