@@ -1,30 +1,97 @@
 (() => {
   if (globalThis.__cf?.consoleHook) return;
   const cf = (globalThis.__cf ??= {});
-  cf.consoleHook = true;
-  const page = window.wrappedJSObject;
+  const MAX_TEXT = 16_384;
+  const MAX_DEPTH = 3;
+  const MAX_ITEMS = 100;
+  const MAX_QUEUE = 1000;
   const queue = [];
+  let dropped = 0;
   let timer = null;
 
   const flush = () => {
     timer = null;
     const entries = queue.splice(0);
+    if (dropped) {
+      entries.push({ level: "warn", text: `[${dropped} console messages dropped]`, url: location.href, time: Date.now() });
+      dropped = 0;
+    }
     if (entries.length) browser.runtime.sendMessage({ type: "console", entries }).catch(() => {});
   };
 
   const record = (level, text) => {
-    queue.push({ level, text: text.length > 16_384 ? `${text.slice(0, 16_384)}…[truncated]` : text, url: location.href, time: Date.now() });
+    if (queue.length >= MAX_QUEUE) {
+      dropped++;
+      return;
+    }
+    queue.push({ level, text: text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}…[truncated]` : text, url: location.href, time: Date.now() });
     timer ??= setTimeout(flush, 250);
+  };
+
+  const dataProp = (object, key) => {
+    let current = object;
+    for (let i = 0; current && i < 8; i++, current = Object.getPrototypeOf(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (descriptor) return "value" in descriptor ? descriptor.value : undefined;
+    }
+    return undefined;
+  };
+
+  // Every node costs at least its own length, so the walk stays within MAX_TEXT characters of work.
+  const walk = (value, depth, ancestors, budget) => {
+    if (budget.left <= 0) return "…";
+    let out;
+    if (typeof value === "string") {
+      out = JSON.stringify(value.length > budget.left ? `${value.slice(0, budget.left)}…` : value);
+    } else if (typeof value === "function") {
+      out = "[Function]";
+    } else if (typeof value !== "object" || value === null) {
+      out = String(value);
+    } else if (ancestors.has(value)) {
+      out = "[Circular]";
+    } else {
+      const tag = Object.prototype.toString.call(value);
+      const isArray = Array.isArray(value);
+      if (tag === "[object Error]") {
+        out = `${dataProp(value, "name")}: ${dataProp(value, "message")}`;
+      } else if (!isArray && tag !== "[object Object]") {
+        out = tag;
+      } else if (depth > MAX_DEPTH) {
+        out = isArray ? "[Array]" : "[Object]";
+      } else {
+        budget.left -= 2;
+        ancestors.add(value);
+        const parts = [];
+        const child = (key) => {
+          const descriptor = Object.getOwnPropertyDescriptor(value, key);
+          return !descriptor ? "undefined" : "value" in descriptor ? walk(descriptor.value, depth + 1, ancestors, budget) : "[getter]";
+        };
+        if (isArray) {
+          for (let i = 0; i < Math.min(value.length, MAX_ITEMS) && budget.left > 0; i++) parts.push(child(String(i)));
+          if (value.length > MAX_ITEMS) parts.push(`…${value.length - MAX_ITEMS} more`);
+        } else {
+          for (const key of Object.keys(value)) {
+            if (budget.left <= 0) {
+              parts.push("…");
+              break;
+            }
+            budget.left -= key.length + 3;
+            parts.push(`${JSON.stringify(key)}:${child(key)}`);
+          }
+        }
+        ancestors.delete(value);
+        return isArray ? `[${parts.join(",")}]` : `{${parts.join(",")}}`;
+      }
+    }
+    budget.left -= out.length;
+    return out;
   };
 
   const format = (value) => {
     try {
       if (typeof value === "string") return value;
-      if (value === undefined) return "undefined";
-      if (typeof value !== "object" || value === null) return String(value);
-      const raw = XPCNativeWrapper.unwrap(value);
-      if (typeof raw.message === "string" && typeof raw.name === "string" && "stack" in raw) return `${raw.name}: ${raw.message}`;
-      return JSON.stringify(raw) ?? String(raw);
+      if (typeof value === "function") return String(value);
+      return walk(value, 0, new Set(), { left: MAX_TEXT });
     } catch {
       try {
         return String(value);
@@ -33,6 +100,10 @@
       }
     }
   };
+
+  cf.consoleHook = { format, record };
+  const page = window.wrappedJSObject;
+  if (!page) return;
 
   const levels = ["log", "info", "warn", "error", "debug"];
   // A forwarder installed by an earlier injection dies with its sandbox, so the page's own functions are kept on the console itself for later injections to find.
