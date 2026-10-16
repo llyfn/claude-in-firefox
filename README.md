@@ -49,7 +49,7 @@ After extension changes, run `npm run build` and reinstall the add-on. After cha
 - **No domain blocking.** Claude in Chrome checks every URL against Anthropic's site-category service and enterprise blocklists. This extension does neither, and it shows no per-site permission prompts. Claude Code's own permission settings are the only gate.
 - **Firefox's own restrictions still apply.** Firefox keeps every extension off its privileged pages (`about:*`, other extensions' pages) and off the domains listed in the `extensions.webextensions.restrictedDomains` pref, such as addons.mozilla.org. To allow those domains, clear that pref and set `privacy.resistFingerprinting.block_mozAddonManager` to `true` in `about:config`. The installer never changes Firefox prefs.
 - **Two guards are kept:**
-  - Password, one-time-code and payment-card field values show as `[value redacted]` in `read_page` and `form_input` output.
+  - Password, one-time-code and payment-card field values show as `[value redacted]` in `read_page` and as `[redacted]` in `form_input` output. Nothing else is redacted: `javascript_tool` results, screenshots and zoom, and console and network logs can all show sensitive values.
   - Input is aborted if the tab switched to another domain mid-action.
 - **Prompt injection is a real risk.** Web pages can contain text written to steer Claude. Claude acts with your logged-in sessions, so review what you ask it to do on sensitive sites, especially if you run Claude Code without permission prompts.
 
@@ -62,7 +62,8 @@ After extension changes, run `npm run build` and reinstall the add-on. After cha
   - Pages that ignore script-generated events will not react.
 - Only one Firefox profile can run the extension at a time; a second profile's native host exits.
 - Disabling, reloading or updating the add-on can break `console` in tabs that were already open; reload those tabs.
-- Reloading the extension forgets the session-to-group mapping. Call `tabs_context` with `createIfEmpty: true` again.
+- Reloading the extension or restarting Firefox forgets the session-to-group mapping. Call `tabs_context` with `createIfEmpty: true` again.
+- Tab groups need Firefox's tab groups feature: `browser.tabs.groups.enabled` must be `true` in `about:config`.
 
 ## Development
 
