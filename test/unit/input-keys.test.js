@@ -28,6 +28,16 @@ test("zoom chords are refused and reload chords are handed back to the backgroun
   assert.throws(() => w.__cf.input.keys({ spec: "cmd+=" }), /zoom/);
   assert.deepEqual(plain(w.__cf.input.keys({ spec: "cmd+r" })), { reload: { bypassCache: false } });
   assert.deepEqual(plain(w.__cf.input.keys({ spec: "cmd+shift+r" })), { reload: { bypassCache: true } });
+  assert.deepEqual(plain(w.__cf.input.keys({ spec: "ctrl+F5" })), { reload: { bypassCache: true } });
+  assert.throws(() => w.__cf.input.keys({ spec: "cmd+r Enter" }), /must be sent as its own key action/);
+});
+
+test("keys stop with a clear error when focus moves into a cross-origin frame mid-sequence", () => {
+  const w = loadContent(`<input id="a"><iframe id="f" tabindex="0"></iframe>`, FILES);
+  Object.defineProperty(w.HTMLIFrameElement.prototype, "contentDocument", { get() { return null; } });
+  w.browser = { runtime: { getFrameId: () => 7 } };
+  w.document.getElementById("a").focus();
+  assert.throws(() => w.__cf.input.keys({ spec: "Tab Enter" }), /remaining keys were not sent/);
 });
 
 test("type fires key events per character and inserts text through the value-setter fallback", () => {

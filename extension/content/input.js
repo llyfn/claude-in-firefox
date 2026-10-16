@@ -120,7 +120,9 @@
   }
 
   function pressChord(c) {
-    const { el } = activeTarget();
+    const target = activeTarget();
+    if (target.redirect) throw new Error("Focus moved into a cross-origin frame after the previous key; the remaining keys were not sent. Send them in a new key action.");
+    const el = target.el;
     const win = el.ownerDocument.defaultView;
     const init = keyInit(c);
     let proceed = el.dispatchEvent(new win.KeyboardEvent("keydown", init));
@@ -317,7 +319,10 @@
   function keys({ spec, repeat = 1, guard = null }) {
     const chords = parseKeySpec(spec);
     if (chords.some(isZoomChord)) throw new Error("Page zoom shortcuts are not supported. Use the zoom action to magnify a region.");
-    if (chords.length === 1 && isReloadChord(chords[0])) return { reload: { bypassCache: chords[0].mods.shift } };
+    if (chords.some(isReloadChord)) {
+      if (chords.length > 1) throw new Error("Reload (cmd+r / ctrl+r / F5) must be sent as its own key action.");
+      return { reload: { bypassCache: chords[0].mods.shift || (chords[0].key === "F5" && chords[0].mods.ctrl) } };
+    }
     const target = activeTarget();
     if (target.redirect) return target;
     cf.dom.guardHost(guard);
