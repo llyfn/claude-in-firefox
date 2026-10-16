@@ -330,5 +330,234 @@
     return {};
   }
 
-  cf.input = { viewport, type, keys, parseKeySpec };
+  const BUTTONS = { left: [0, 1], middle: [1, 4], right: [2, 2] };
+  const NON_BUBBLING = new Set(["mouseenter", "mouseleave", "pointerenter", "pointerleave"]);
+  const hovered = new WeakMap();
+
+  function fire(el, type, x, y, extra = {}) {
+    const win = el.ownerDocument.defaultView;
+    const Ctor = type.startsWith("pointer") ? win.PointerEvent
+      : type === "wheel" ? win.WheelEvent
+        : type.startsWith("drag") || type === "drop" ? win.DragEvent
+          : win.MouseEvent;
+    const bubbles = !NON_BUBBLING.has(type);
+    return el.dispatchEvent(new Ctor(type, {
+      bubbles, cancelable: bubbles, composed: true, view: win,
+      clientX: x, clientY: y, screenX: win.screenX + x, screenY: win.screenY + y,
+      pointerId: 1, pointerType: "mouse", isPrimary: true, ...extra,
+    }));
+  }
+
+  function modifierFlags(spec) {
+    const flags = { ctrlKey: false, shiftKey: false, altKey: false, metaKey: false };
+    for (const part of String(spec ?? "").split("+").filter(Boolean)) {
+      const mod = MODIFIERS[part.toLowerCase()];
+      if (!mod) throw new Error(`Unknown modifier: ${part}`);
+      flags[`${mod}Key`] = true;
+    }
+    return flags;
+  }
+
+  function locate({ x, y, ref }) {
+    if (ref) {
+      const el = cf.tree.resolve(ref);
+      el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+      const rect = el.getBoundingClientRect();
+      return { el, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+    let doc = document;
+    let lx = x;
+    let ly = y;
+    for (;;) {
+      let el = doc.elementFromPoint(lx, ly);
+      if (!el) throw new Error(`No element at (${Math.round(x)}, ${Math.round(y)}). The point may be outside the page.`);
+      for (let root = el.openOrClosedShadowRoot ?? el.shadowRoot; root; root = el.openOrClosedShadowRoot ?? el.shadowRoot) {
+        const inner = root.elementFromPoint(lx, ly);
+        if (!inner || inner === el) break;
+        el = inner;
+      }
+      const tag = tagOf(el);
+      if (tag !== "IFRAME" && tag !== "FRAME") return { el, x: lx, y: ly };
+      const rect = el.getBoundingClientRect();
+      lx -= rect.left + el.clientLeft;
+      ly -= rect.top + el.clientTop;
+      let inner = null;
+      try {
+        inner = el.contentDocument;
+      } catch {
+        inner = null;
+      }
+      if (!inner) return { redirect: { frameId: browser.runtime.getFrameId(el), x: lx, y: ly } };
+      doc = inner;
+    }
+  }
+
+  function topPoint(el, x, y) {
+    let win = el.ownerDocument.defaultView;
+    let px = x;
+    let py = y;
+    while (win !== window && win.frameElement) {
+      const rect = win.frameElement.getBoundingClientRect();
+      px += rect.left + win.frameElement.clientLeft;
+      py += rect.top + win.frameElement.clientTop;
+      win = win.parent;
+    }
+    return { x: px, y: py };
+  }
+
+  function hoverTo(el, x, y, flags = {}) {
+    const doc = el.ownerDocument;
+    const previous = hovered.get(doc)?.deref();
+    if (previous && previous !== el && previous.isConnected) {
+      for (const type of ["pointerout", "pointerleave", "mouseout", "mouseleave"]) fire(previous, type, x, y, { ...flags, relatedTarget: el });
+    }
+    if (previous !== el) {
+      for (const type of ["pointerover", "pointerenter", "mouseover", "mouseenter"]) fire(el, type, x, y, { ...flags, relatedTarget: previous ?? null });
+    }
+    fire(el, "pointermove", x, y, flags);
+    fire(el, "mousemove", x, y, flags);
+    hovered.set(doc, new WeakRef(el));
+  }
+
+  function focusFor(el, x, y) {
+    const doc = el.ownerDocument;
+    const target = el.closest(FOCUSABLE);
+    if (!target || target.disabled) {
+      doc.activeElement?.blur?.();
+      return;
+    }
+    if (doc.activeElement === target) return;
+    target.focus();
+    if (supportsSelection(target)) target.setSelectionRange(target.value.length, target.value.length);
+    else if (cf.dom.isContentEditable(target)) {
+      const caret = doc.caretPositionFromPoint(x, y);
+      if (caret) doc.getSelection().collapse(caret.offsetNode, caret.offset);
+    }
+  }
+
+  function selectBlock(el) {
+    if (supportsSelection(el)) {
+      el.select();
+      return;
+    }
+    const block = el.closest("p,li,td,th,h1,h2,h3,h4,h5,h6,pre,blockquote,div") ?? el;
+    const range = el.ownerDocument.createRange();
+    range.selectNodeContents(block);
+    const selection = el.ownerDocument.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  // A synthetic click on a target=_blank link would be popup-blocked, so new-tab links are
+  // cancelled here and opened by the background inside the session's tab group.
+  function watchNewTabLinks(win, flags) {
+    const urls = [];
+    const onClick = (event) => {
+      if (event.defaultPrevented) return;
+      const link = event.composedPath().find((n) => (n.tagName === "A" || n.tagName === "AREA") && n.hasAttribute("href"));
+      if (!link) return;
+      const target = (link.getAttribute("target") || "").toLowerCase();
+      const newTab = event.type === "auxclick" || flags.ctrlKey || flags.metaKey || (target !== "" && !["_self", "_parent", "_top"].includes(target));
+      if (!newTab) return;
+      event.preventDefault();
+      urls.push(link.href);
+    };
+    win.addEventListener("click", onClick);
+    win.addEventListener("auxclick", onClick);
+    return {
+      urls,
+      stop() {
+        win.removeEventListener("click", onClick);
+        win.removeEventListener("auxclick", onClick);
+      },
+    };
+  }
+
+  function click({ x, y, ref, button = "left", count = 1, modifiers = "", guard = null }) {
+    const at = locate({ x, y, ref });
+    if (at.redirect) return at;
+    cf.dom.guardHost(guard);
+    const { el } = at;
+    const flags = modifierFlags(modifiers);
+    const [buttonIndex, buttonsMask] = BUTTONS[button];
+    const links = watchNewTabLinks(el.ownerDocument.defaultView, flags);
+    try {
+      hoverTo(el, at.x, at.y, flags);
+      for (let i = 1; i <= count; i++) {
+        fire(el, "pointerdown", at.x, at.y, { ...flags, button: buttonIndex, buttons: buttonsMask, detail: i });
+        const notCancelled = fire(el, "mousedown", at.x, at.y, { ...flags, button: buttonIndex, buttons: buttonsMask, detail: i });
+        if (notCancelled && i === 1) focusFor(el, at.x, at.y);
+        fire(el, "pointerup", at.x, at.y, { ...flags, button: buttonIndex, buttons: 0, detail: i });
+        fire(el, "mouseup", at.x, at.y, { ...flags, button: buttonIndex, buttons: 0, detail: i });
+        if (button === "left") fire(el, "click", at.x, at.y, { ...flags, button: 0, buttons: 0, detail: i });
+        else if (button === "middle") fire(el, "auxclick", at.x, at.y, { ...flags, button: 1, buttons: 0, detail: i });
+        if (button === "left" && i === 2) fire(el, "dblclick", at.x, at.y, { ...flags, button: 0, buttons: 0, detail: 2 });
+      }
+      if (button === "right") fire(el, "contextmenu", at.x, at.y, { ...flags, button: 2, buttons: 0 });
+      if (count === 3) selectBlock(el);
+    } finally {
+      links.stop();
+    }
+    return { opened: links.urls, point: topPoint(el, at.x, at.y) };
+  }
+
+  function hover({ x, y, ref }) {
+    const at = locate({ x, y, ref });
+    if (at.redirect) return at;
+    hoverTo(at.el, at.x, at.y);
+    return { point: topPoint(at.el, at.x, at.y) };
+  }
+
+  function scroll({ x, y, ref, dx, dy, guard = null }) {
+    const at = locate({ x, y, ref });
+    if (at.redirect) return at;
+    cf.dom.guardHost(guard);
+    if (fire(at.el, "wheel", at.x, at.y, { deltaX: dx, deltaY: dy, deltaMode: 0 })) scrollFrom(at.el, dx, dy);
+    return { point: topPoint(at.el, at.x, at.y) };
+  }
+
+  function scrollTo({ ref }) {
+    cf.tree.resolve(ref).scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+    return {};
+  }
+
+  function drag({ fromX, fromY, toX, toY, guard = null }) {
+    const start = locate({ x: fromX, y: fromY });
+    if (start.redirect) throw new Error("left_click_drag inside cross-origin frames is not supported");
+    cf.dom.guardHost(guard);
+    const doc = start.el.ownerDocument;
+    const endX = toX + (start.x - fromX);
+    const endY = toY + (start.y - fromY);
+    hoverTo(start.el, start.x, start.y);
+    fire(start.el, "pointerdown", start.x, start.y, { button: 0, buttons: 1 });
+    fire(start.el, "mousedown", start.x, start.y, { button: 0, buttons: 1 });
+    const source = start.el.closest('[draggable="true"]');
+    const data = source ? new doc.defaultView.DataTransfer() : null;
+    if (source) fire(source, "dragstart", start.x, start.y, { dataTransfer: data });
+    let over = start.el;
+    let x = start.x;
+    let y = start.y;
+    for (let step = 1; step <= 5; step++) {
+      x = start.x + ((endX - start.x) * step) / 5;
+      y = start.y + ((endY - start.y) * step) / 5;
+      const target = doc.elementFromPoint(x, y) ?? over;
+      fire(target, "pointermove", x, y, { buttons: 1 });
+      fire(target, "mousemove", x, y, { buttons: 1 });
+      if (source) {
+        fire(source, "drag", x, y, { dataTransfer: data });
+        if (target !== over) fire(target, "dragenter", x, y, { dataTransfer: data });
+        fire(target, "dragover", x, y, { dataTransfer: data });
+      }
+      over = target;
+    }
+    fire(over, "pointerup", x, y, { button: 0, buttons: 0 });
+    fire(over, "mouseup", x, y, { button: 0, buttons: 0 });
+    if (source) {
+      fire(over, "drop", x, y, { dataTransfer: data });
+      fire(source, "dragend", x, y, { dataTransfer: data });
+    }
+    return { point: topPoint(over, x, y) };
+  }
+
+  cf.input = { viewport, type, keys, parseKeySpec, click, hover, scroll, scrollTo, drag };
 })();
