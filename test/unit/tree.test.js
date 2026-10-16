@@ -46,6 +46,16 @@ test("refs are stable across builds and resolve to their elements", () => {
   assert.equal(w.__cf.tree.resolve(first), w.document.getElementById("b"));
 });
 
+test("a build drops refs of elements that were removed, even if the element is attached again later", () => {
+  const w = loadContent(`<button id="b">Press</button><a href="#">Other</a>`);
+  const button = w.document.getElementById("b");
+  const ref = w.__cf.tree.build().nodes.find((n) => n.name === "Press").ref;
+  button.remove();
+  w.__cf.tree.build();
+  w.document.body.append(button);
+  assert.throws(() => w.__cf.tree.resolve(ref), /not found/);
+});
+
 test("removed elements give a helpful stale-ref error", () => {
   const w = loadContent(`<button id="b">Press</button>`);
   const ref = w.__cf.tree.build().nodes[0].ref;

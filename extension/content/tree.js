@@ -215,6 +215,10 @@
     };
 
     visit(root, 0);
+    for (const [ref, weak] of refs) {
+      const el = weak.deref();
+      if (!el || !el.isConnected) refs.delete(ref);
+    }
     return { nodes, truncated, viewport: { width: innerWidth, height: innerHeight } };
   }
 
