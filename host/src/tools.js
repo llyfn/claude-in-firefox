@@ -97,11 +97,6 @@ export const TOOLS = [
     inputSchema: { type: "object", properties: { tabId, max_chars: { type: "integer", minimum: 100 } }, required: ["tabId"] },
   },
   {
-    name: "javascript_tool",
-    description: "Run JavaScript in the page and return the value of the last expression (REPL style; promises are awaited). Code that uses top-level await or return is retried wrapped in an async function, so use return there to produce a value. If the page's Content Security Policy forbids eval, the code runs in the extension's isolated sandbox instead: page globals are then reachable through window.wrappedJSObject and the result must be JSON-serializable.",
-    inputSchema: { type: "object", properties: { action: { type: "string", enum: ["javascript_exec"] }, text: { type: "string", description: "JavaScript source." }, tabId }, required: ["action", "text", "tabId"] },
-  },
-  {
     name: "read_console_messages",
     description: "Read console output (log/info/warn/error/debug, uncaught errors, unhandled rejections) captured from the tab since its current origin loaded. Provide a pattern to keep the output focused.",
     inputSchema: {

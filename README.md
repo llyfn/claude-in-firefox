@@ -1,6 +1,6 @@
 # Claude in Firefox
 
-Drive your everyday Firefox from Claude Code. A Firefox extension plus a local MCP bridge gives Claude browser tools modeled on Claude in Chrome: navigate, click, type, take screenshots, read the page, fill forms, run JavaScript, and read console and network logs. It works in your real profile, with your logins, and it refuses no domain.
+Drive your everyday Firefox from Claude Code. A Firefox extension plus a local MCP bridge gives Claude browser tools modeled on Claude in Chrome: navigate, click, type, take screenshots, read the page, fill forms, and read console and network logs. It works in your real profile, with your logins, and it refuses no domain.
 
 ## How it works
 
@@ -39,7 +39,6 @@ After extension changes, run `npm run build` and reinstall the add-on. After cha
 | `read_page`, `find` | Accessibility-tree outline with stable `ref_N` ids; keyword search over it |
 | `form_input`, `file_upload` | Set form controls by ref; put local files into file inputs |
 | `get_page_text` | Readable text of the main content |
-| `javascript_tool` | Evaluate JavaScript in the page |
 | `read_console_messages`, `read_network_requests` | Console output and HTTP requests since the page's origin loaded |
 | `resize_window` | Resize the browser window |
 | `browser_batch` | Run several of the above in one round trip |
@@ -49,7 +48,7 @@ After extension changes, run `npm run build` and reinstall the add-on. After cha
 - **No domain blocking.** Claude in Chrome checks every URL against Anthropic's site-category service and enterprise blocklists. This extension does neither, and it shows no per-site permission prompts. Claude Code's own permission settings are the only gate.
 - **Firefox's own restrictions still apply.** Firefox keeps every extension off its privileged pages (`about:*`, other extensions' pages) and off the domains listed in the `extensions.webextensions.restrictedDomains` pref, such as addons.mozilla.org. To allow those domains, clear that pref and set `privacy.resistFingerprinting.block_mozAddonManager` to `true` in `about:config`. The installer never changes Firefox prefs.
 - **Two guards are kept:**
-  - Password, one-time-code and payment-card field values show as `[value redacted]` in `read_page` and as `[redacted]` in `form_input` output. Nothing else is redacted: `javascript_tool` results, screenshots and zoom, and console and network logs can all show sensitive values.
+  - Password, one-time-code and payment-card field values show as `[value redacted]` in `read_page` and as `[redacted]` in `form_input` output. Nothing else is redacted: screenshots and zoom, and console and network logs can all show sensitive values.
   - Input is aborted if the tab switched to another domain mid-action.
 - **Prompt injection is a real risk.** Web pages can contain text written to steer Claude. Claude acts with your logged-in sessions, so review what you ask it to do on sensitive sites, especially if you run Claude Code without permission prompts.
 

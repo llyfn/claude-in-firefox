@@ -28,7 +28,7 @@ Let Claude Code drive the user's everyday Firefox — real profile, real logins 
 
 - Firefox Developer Edition ≥ 139 on macOS (the user's machine). 139 is the first release with both `tabs.group()` and the `tabGroups` API.
 - Unsigned extension installed permanently with `xpinstall.signatures.required=false`.
-- WebExtension Manifest V2 (persistent background page). Reasons: a long-lived native port with no event-page lifecycle; `tabs.executeScript({code})` for `javascript_tool`; Firefox continues to support MV2.
+- WebExtension Manifest V2 (persistent background page). Reasons: a long-lived native port with no event-page lifecycle; Firefox continues to support MV2.
 - Firefox gives extensions no `chrome.debugger` equivalent → no CDP, no trusted input events.
 - Native messaging: a single message **from the host to Firefox** is capped at 1 MB; Firefox → host is effectively unbounded.
 - Runtime: Node ≥ 20. Package manager: npm. Language: plain JavaScript (ES modules in Node and in the background page; classic scripts for content scripts, which MV2 cannot load as modules). No bundler, no TypeScript.
@@ -158,7 +158,6 @@ Names drop CiC's `_mcp` suffix. Parameter names, enums and ranges match CiC so m
 | `find` | `query`, `tabId` | Keyword scoring over the tree (§6.3). Up to 20 hits `- ref_N: role "name" …`. Description states it is keyword-based. |
 | `form_input` | `ref`, `value: string\|boolean\|number`, `tabId` | §6.5. |
 | `get_page_text` | `tabId`, `max_chars?` (default 50 000) | §6.6. |
-| `javascript_tool` | `action: "javascript_exec"`, `text`, `tabId` | §6.7. |
 | `read_console_messages` | `tabId`, `onlyErrors?`, `clear?`, `pattern?` (regex, case-insensitive; substring fallback if invalid), `limit?` (default 100) | §6.8. |
 | `read_network_requests` | `tabId`, `urlPattern?` (substring), `clear?`, `limit?` (default 100) | §6.8. |
 | `resize_window` | `width`, `height`, `tabId` | `windows.update` on the tab's window; max 7680×4320. |
@@ -270,23 +269,9 @@ Builds a node list, then renders text. Same text format as CiC so the model's ex
 
 CiC's heuristic: first matching selector of `article, main, [class*="articleBody"], [class*="article-body"], [class*="post-content"], [class*="entry-content"], [class*="content-body"], [role="main"], .content, #content`, taking the match with the longest `innerText`; else `body`. Normalize whitespace; < 10 chars → "No text content found…". Output `Title: …\nURL: …\nSource element: <tag>\n---\n<text>` with `max_chars` truncation at a line boundary.
 
-### 6.7 javascript_tool (`background/tools/javascript.js`)
+### 6.7 javascript_tool (removed)
 
-1. **Page realm first.** The `tabs.executeScript` code calls `window.eval` on a small program that runs in the page. That program indirect-evals the user code, awaits the result, and serializes it in the page. It then hands the JSON back through a `CustomEvent` with a string `detail`. A string crosses the content-script boundary unchanged; page objects and page Promises do not reliably.
-2. **Sandbox fallback.** If `window.eval` itself throws (the page CSP forbids eval), rerun the user code directly as the `executeScript` `code`, in the content-script realm, which page CSP does not cover.
-   - Page objects are then reachable via `window.wrappedJSObject`.
-   - The completion value must be structured-cloneable.
-   - The output is prefixed `[ran in extension sandbox: page CSP blocks eval; use window.wrappedJSObject for page globals]`.
-3. **Top-level `await` or `return`.** A `SyntaxError` about either → rerun wrapped as `(async () => { <code> })()`, with a note that `return` produces the value.
-4. **Serializer.**
-   - JSON with depth 5.
-   - Strings over 1000 chars and arrays over 100 items are truncated.
-   - Functions and DOM nodes are described (`[Function name]`, `<tag#id.class>`).
-   - Total output ≤ 51 200 chars.
-   - Errors → `isError` with the message and the head of the stack.
-   - Execution timeout 25 s, inside the MCP server's 30 s.
-
-Exact realm behavior is verified in the spike; the spec's fallback chain stands either way.
+Removed before distribution: running code strings received at runtime conflicts with Mozilla's add-on policy that extensions must not load remote code for execution, which applies to signed unlisted add-ons too. `read_page`, `get_page_text`, `form_input` and `computer` cover reading and acting on pages.
 
 ### 6.8 Console and network logs (`content/console-hook.js`, `background/logs.js`)
 
@@ -309,7 +294,7 @@ Exact realm behavior is verified in the spike; the spec's fallback chain stands 
 ### 6.11 Guards kept from CiC
 
 - **Redaction** of sensitive field values (§6.3, §6.5).
-- **Domain-change guard**: acting operations (`computer` clicks/drag/type/key/scroll, `form_input`, `file_upload`, `javascript_tool`) record the tab's hostname when the tool call starts and re-check it immediately before dispatching input; on mismatch → `Page navigated to a different domain during <action>. Re-read the tab state before retrying.`
+- **Domain-change guard**: acting operations (`computer` clicks/drag/type/key/scroll, `form_input`, `file_upload`) record the tab's hostname when the tool call starts and re-check it immediately before dispatching input; on mismatch → `Page navigated to a different domain during <action>. Re-read the tab state before retrying.`
 
 No domain is ever refused. The README documents Firefox's own `extensions.webextensions.restrictedDomains` pref (and `privacy.resistFingerprinting.block_mozAddonManager`) for users who want the extension active on Mozilla's restricted sites; the installer does not change Firefox prefs.
 
@@ -367,9 +352,9 @@ The wrapper lives in Application Support rather than the repo because macOS priv
 
 **End-to-end (`npm run e2e`)**
 
-- Fixture server on two ports (`localhost:<a>`, `127.0.0.1:<b>` for a cross-origin iframe) serving: a React-style controlled input (value tracker), a form that only submits via Enter, `<select>`, checkbox/radio, `contenteditable`, a `target=_blank` link, a scrollable div, a draggable item + drop zone, a page that logs to console and fetches `/api/ping`, a strict-CSP page (`script-src 'self'`) for `javascript_tool`, and a file input.
+- Fixture server on two ports (`localhost:<a>`, `127.0.0.1:<b>` for a cross-origin iframe) serving: a React-style controlled input (value tracker), a form that only submits via Enter, `<select>`, checkbox/radio, `contenteditable`, a `target=_blank` link, a scrollable div, a draggable item + drop zone, a page that logs to console and fetches `/api/ping`, and a file input.
 - `web-ext run --firefox "<Developer Edition binary>"` with the extension loaded temporarily and the native manifest installed.
-- A Node script using the MCP SDK client spawns `mcp-server.js` and exercises every tool, asserting on DOM state read back via `javascript_tool`/`read_page`.
+- A Node script using the MCP SDK client spawns `mcp-server.js` and exercises every tool, asserting on page state read back via `read_page` and `get_page_text`.
 
 **Gates**: `npm test`, `npx web-ext lint --source-dir extension`, `npm run e2e` all pass before any phase is called done.
 

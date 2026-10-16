@@ -20,7 +20,6 @@ function handler(req, res) {
     return;
   }
   const headers = { "content-type": TYPES[path.extname(file)] ?? "application/octet-stream" };
-  if (path.basename(file).startsWith("csp-")) headers["content-security-policy"] = "script-src 'self'";
   res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 }

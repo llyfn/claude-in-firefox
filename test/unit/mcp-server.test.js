@@ -15,9 +15,9 @@ function fakeBridge(handler) {
   return { calls, call: async (tool, args, timeoutMs) => { calls.push({ tool, args, timeoutMs }); return handler(tool, args); } };
 }
 
-test("the 15 tools have unique names and object input schemas", () => {
-  assert.equal(TOOLS.length, 15);
-  assert.equal(new Set(TOOLS.map((t) => t.name)).size, 15);
+test("the 14 tools have unique names and object input schemas", () => {
+  assert.equal(TOOLS.length, 14);
+  assert.equal(new Set(TOOLS.map((t) => t.name)).size, 14);
   for (const tool of TOOLS) assert.equal(tool.inputSchema.type, "object", tool.name);
 });
 

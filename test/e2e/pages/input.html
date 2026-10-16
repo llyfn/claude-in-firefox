@@ -20,6 +20,7 @@
     <label for="q">Query</label> <input id="q" name="q"> <button>Go</button>
   </form>
   <p><a id="newtab" href="/basic.html" target="_blank">Open basic in new tab</a></p>
+  <p><button id="report-scroll" onclick="log('scrollTop ' + document.getElementById('scroller').scrollTop)">Report scroll</button></p>
   <div id="editor" contenteditable="true" aria-label="Editor" style="border: 1px solid #888; min-height: 2em"></div>
   <pre id="log"></pre>
 </div>

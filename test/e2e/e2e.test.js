@@ -15,6 +15,18 @@ async function openTab(path, origin = h.fixtures.a) {
   return tabId;
 }
 
+async function eventually(check, timeoutMs = 5000) {
+  const end = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return await check();
+    } catch (err) {
+      if (Date.now() > end) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+}
+
 describe("tabs and navigation", () => {
   test("tabs_context asks for createIfEmpty before a group exists", async () => {
     assert.match(textOf(await h.call("tabs_context")), /createIfEmpty: true/);
@@ -161,54 +173,11 @@ describe("forms and page text", () => {
   });
 });
 
-describe("javascript_tool", () => {
-  const js = (tabId, text) => h.call("javascript_tool", { tabId, action: "javascript_exec", text });
-
-  test("returns values, awaits promises and describes DOM nodes", async () => {
-    const tabId = await openTab("/basic.html");
-    assert.equal(textOf(await js(tabId, "document.title")), "Basic page");
-    assert.equal(textOf(await js(tabId, "Promise.resolve(6 * 7)")), "42");
-    assert.equal(textOf(await js(tabId, "document.querySelector('h1')")), "<h1>");
-  });
-
-  test("reports page errors as tool errors", async () => {
-    const tabId = await openTab("/basic.html");
-    const result = await js(tabId, "nope.value");
-    assert.equal(result.isError, true);
-    assert.match(textOf(result), /ReferenceError/);
-  });
-
-  test("code with top-level await or return is wrapped", async () => {
-    const tabId = await openTab("/basic.html");
-    const text = textOf(await js(tabId, "const n = await Promise.resolve(5); return n * 2"));
-    assert.match(text, /wrapped in an async function/);
-    assert.match(text, /10$/);
-  });
-
-  test("strict-CSP pages fall back to the extension sandbox", async () => {
-    const tabId = await openTab("/csp-page.html");
-    const text = textOf(await js(tabId, "window.wrappedJSObject.pageVar"));
-    assert.match(text, /^\[ran in extension sandbox/);
-    assert.match(text, /42$/);
-  });
-
-  test("sandboxed code can declare the same top-level name in repeated calls", async () => {
-    const tabId = await openTab("/csp-page.html");
-    const code = "const v = window.wrappedJSObject.pageVar; v";
-    for (let i = 0; i < 2; i++) {
-      const result = await js(tabId, code);
-      assert.notEqual(result.isError, true, textOf(result));
-      assert.match(textOf(result), /42$/);
-    }
-  });
-});
-
 describe("computer", () => {
   let tabId;
   let toShot;
   const computer = (args) => h.call("computer", { tabId, ...args });
   const log = async () => textOf(await h.call("get_page_text", { tabId }));
-  const js = async (id, text) => textOf(await h.call("javascript_tool", { tabId: id, action: "javascript_exec", text }));
   async function frameMapper(id) {
     const [, w, hgt] = /Screenshot (\d+)x(\d+)/.exec(textOf(await h.call("computer", { tabId: id, action: "screenshot" }))).map(Number);
     const [, vw, vh] = /Viewport: (\d+)x(\d+)$/.exec(textOf(await h.call("read_page", { tabId: id, filter: "interactive" }))).map(Number);
@@ -254,13 +223,17 @@ describe("computer", () => {
     await computer({ action: "key", text: "cmd+a BackSpace" });
     assert.doesNotMatch(textOf(await h.call("read_page", { tabId })), /textbox "Query" \[ref_\d+\] value=/);
     await computer({ action: "key", text: "Tab" });
-    assert.equal(await js(tabId, "document.activeElement.textContent"), "Go");
+    const typed = await computer({ action: "type", text: "x" });
+    assert.equal(typed.isError, true);
+    assert.match(textOf(typed), /focus is on <button>/);
   });
 
   test("scroll scrolls the element under the pointer and returns a screenshot", async () => {
     const result = await computer({ action: "scroll", coordinate: toShot(140, 180), scroll_direction: "down", scroll_amount: 2 });
     assert.equal(imagesOf(result).length, 1);
-    assert.equal(await js(tabId, "document.getElementById('scroller').scrollTop"), "200");
+    const report = /button "Report scroll" \[(ref_\d+)\]/.exec(textOf(await h.call("read_page", { tabId })))[1];
+    await computer({ action: "left_click", ref: report });
+    assert.match(await log(), /scrollTop 200/);
   });
 
   test("left_click_drag performs HTML5 drag and drop", async () => {
@@ -296,18 +269,6 @@ describe("computer", () => {
 });
 
 describe("console and network", () => {
-  async function eventually(check, timeoutMs = 5000) {
-    const end = Date.now() + timeoutMs;
-    for (;;) {
-      try {
-        return await check();
-      } catch (err) {
-        if (Date.now() > end) throw err;
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-    }
-  }
-
   test("console output from page load is captured and filterable", async () => {
     const tabId = await openTab("/console.html");
     await eventually(async () => {

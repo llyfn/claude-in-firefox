@@ -8,7 +8,6 @@ import { createSessions } from "./sessions.js";
 import { logTools } from "./tools/logs.js";
 import { pageTools } from "./tools/page.js";
 import { computerTool } from "./tools/computer.js";
-import { javascriptTool } from "./tools/javascript.js";
 import { tabTools } from "./tools/tabs.js";
 
 const api = browser;
@@ -26,7 +25,6 @@ api.tabs.onCreated.addListener((tab) => {
 const tools = {
   ...tabTools({ api, sessions }),
   ...pageTools({ api, content }),
-  ...javascriptTool({ api }),
   ...computerTool({ api, content, capture }),
   ...logTools({ store }),
 };
