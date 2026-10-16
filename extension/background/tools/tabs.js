@@ -52,6 +52,7 @@ async function navigate(api, tab, url) {
     return `Navigation to ${now.url} started but the page is still loading after 15s`;
   }
   const now = await tabShowing(api, tab.id, loadedUrl);
+  await framesSettled(api, tab.id);
   return `Navigated to ${now.url} — "${now.title}"`;
 }
 
@@ -63,6 +64,18 @@ async function tabShowing(api, tabId, url) {
     tab = await api.tabs.get(tabId);
   }
   return tab;
+}
+
+// A page's load event can fire before its iframes are registered or have their final frame ids; frame-addressed tools need the frame list to have stopped changing.
+async function framesSettled(api, tabId) {
+  let previous = null;
+  for (let waited = 0; waited < 1000; waited += 50) {
+    const frames = (await api.webNavigation.getAllFrames({ tabId })) ?? [];
+    const signature = frames.map((f) => `${f.frameId}:${f.url}`).join("|");
+    if (signature === previous) return;
+    previous = signature;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 function waitForNavigation(api, tabId, timeoutMs, acceptBlank) {
