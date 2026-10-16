@@ -14,7 +14,7 @@
     const sensitive = cf.tree.isSensitive(el);
     const show = (v) => (sensitive ? "[redacted]" : JSON.stringify(String(v)));
 
-    if (tag === "SELECT") return selectOption(el, value);
+    if (tag === "SELECT") return selectOption(el, value, sensitive);
     if (type === "checkbox") {
       if (typeof value !== "boolean") throw new Error("Checkbox requires a boolean value (true/false)");
       const previous = el.checked;
@@ -54,18 +54,20 @@
     throw new Error(`<${tag.toLowerCase()}> is not a supported form input`);
   }
 
-  function selectOption(el, value) {
+  function selectOption(el, value, sensitive) {
     const wanted = String(value);
     const options = [...el.options];
     const option = options.find((o) => o.value === wanted)
       ?? options.find((o) => o.text === wanted)
       ?? options.find((o) => o.text.trim().toLowerCase() === wanted.trim().toLowerCase());
+    if (!option && sensitive) throw new Error("Option not found (options of this field are not listed because it is sensitive)");
     if (!option) throw new Error(`Option "${wanted}" not found. Available options: ${options.map((o) => `"${o.text.trim()}" (value: "${o.value}")`).join(", ")}`);
     const previous = el.selectedOptions[0]?.text.trim() ?? "";
     el.focus();
     option.selected = true;
     fire(el, "input");
     fire(el, "change");
+    if (sensitive) return "Selected [redacted] (previous: [redacted])";
     return `Selected "${option.text.trim()}" (previous: "${previous}")`;
   }
 

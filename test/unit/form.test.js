@@ -61,6 +61,13 @@ test("sensitive values are redacted in the output", () => {
   assert.equal(w.document.getElementById("p").value, "new-secret");
 });
 
+test("sensitive selects are redacted in form_input output", () => {
+  const w = loadContent(`<label for="m">Expiry month</label><select id="m" autocomplete="cc-exp-month"><option>01</option><option>02</option></select>`, FILES);
+  assert.equal(set(w, "Expiry month", "02"), "Selected [redacted] (previous: [redacted])");
+  assert.equal(w.document.getElementById("m").value, "02");
+  assert.throws(() => set(w, "Expiry month", "13"), (e) => !/01|02/.test(e.message) && /Option not found/.test(e.message));
+});
+
 test("unsupported elements and file inputs are refused", () => {
   const w = loadContent(`<button>Plain button</button><label for="f">Attachment</label><input id="f" type="file">`, FILES);
   assert.throws(() => set(w, "Plain button", "x"), /<button> is not a supported form input/);
