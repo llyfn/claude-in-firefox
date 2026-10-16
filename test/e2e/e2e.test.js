@@ -283,3 +283,45 @@ describe("computer", () => {
     assert.match(textOf(await h.call("read_page", { tabId: byPoint })), /frame clicked/);
   });
 });
+
+describe("console and network", () => {
+  async function eventually(check, timeoutMs = 5000) {
+    const end = Date.now() + timeoutMs;
+    for (;;) {
+      try {
+        return await check();
+      } catch (err) {
+        if (Date.now() > end) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+  }
+
+  test("console output from page load is captured and filterable", async () => {
+    const tabId = await openTab("/console.html");
+    await eventually(async () => {
+      const all = textOf(await h.call("read_console_messages", { tabId }));
+      assert.match(all, /\[LOG\] \(http:[^)]+\) page loaded 42/);
+      assert.match(all, /\[ERROR\] .*Error: boom on load/);
+      assert.match(all, /\[EXCEPTION\] .*async explosion/);
+    });
+    assert.doesNotMatch(textOf(await h.call("read_console_messages", { tabId, onlyErrors: true })), /page loaded/);
+    const filtered = textOf(await h.call("read_console_messages", { tabId, pattern: "boom" }));
+    assert.match(filtered, /boom on load/);
+    assert.doesNotMatch(filtered, /page loaded/);
+  });
+
+  test("network requests and later console calls are captured with details", async () => {
+    const tabId = await openTab("/console.html");
+    const button = /button "Log and fetch" \[(ref_\d+)\]/.exec(textOf(await h.call("read_page", { tabId })))[1];
+    await h.call("computer", { tabId, action: "left_click", ref: button });
+    await eventually(async () => assert.match(textOf(await h.call("read_network_requests", { tabId, urlPattern: "/api/" })), /url: http:\/\/127\.0\.0\.1:\d+\/api\/ping\n   method: GET\n   statusCode: 200/));
+    await eventually(async () => assert.match(textOf(await h.call("read_console_messages", { tabId, pattern: "button warn" })), /\[WARN\] .*button warn \{"n":1\}/));
+  });
+
+  test("clear empties the console buffer", async () => {
+    const tabId = await openTab("/console.html");
+    await eventually(async () => assert.match(textOf(await h.call("read_console_messages", { tabId, clear: true })), /page loaded/));
+    assert.match(textOf(await h.call("read_console_messages", { tabId, pattern: "page loaded" })), /No console messages found/);
+  });
+});

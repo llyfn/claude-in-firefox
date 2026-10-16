@@ -2,8 +2,10 @@ import { createActivity } from "./activity.js";
 import { createCapture } from "./capture.js";
 import { createContent } from "./content.js";
 import { createDispatcher } from "./dispatch.js";
+import { createLogStore, installLogListeners } from "./logs.js";
 import { connectNative } from "./native.js";
 import { createSessions } from "./sessions.js";
+import { logTools } from "./tools/logs.js";
 import { pageTools } from "./tools/page.js";
 import { computerTool } from "./tools/computer.js";
 import { javascriptTool } from "./tools/javascript.js";
@@ -14,6 +16,8 @@ const content = createContent(api);
 const sessions = createSessions(api);
 const activity = createActivity({ api, content });
 const capture = createCapture({ api, content });
+const store = createLogStore();
+installLogListeners(api, store);
 
 api.tabs.onCreated.addListener((tab) => {
   sessions.adoptOpened(tab).catch(() => {});
@@ -24,6 +28,7 @@ const tools = {
   ...pageTools({ api, content }),
   ...javascriptTool({ api }),
   ...computerTool({ api, content, capture }),
+  ...logTools({ store }),
 };
 
 let native = null;
