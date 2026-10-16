@@ -1,3 +1,5 @@
 node_modules/
 host/bin/
 web-ext-artifacts/
+.worktrees/
+.superpowers/
