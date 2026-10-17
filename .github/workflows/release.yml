@@ -11,20 +11,22 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - run: npm ci
 
-      - name: Check that the tag matches the extension version
+      - name: Check that the tag matches the extension and package versions
         run: |
-          version=$(node -p 'require("./extension/manifest.json").version')
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match extension/manifest.json version $version"
+          manifest=$(node -p 'require("./extension/manifest.json").version')
+          package=$(node -p 'require("./package.json").version')
+          if [ "v$manifest" != "$GITHUB_REF_NAME" ] || [ "v$package" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME must match extension/manifest.json ($manifest) and package.json ($package)"
             exit 1
           fi
 
@@ -37,6 +39,11 @@ jobs:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: npx web-ext sign --source-dir extension --artifacts-dir web-ext-artifacts --channel unlisted --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
 
       - name: Publish the GitHub release
         env:
