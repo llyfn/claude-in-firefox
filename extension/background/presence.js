@@ -14,6 +14,7 @@ export function createPresence({ api, content, sessions }) {
     if (state) marked.add(tab.id);
     else marked.delete(tab.id);
     await content.call(tab.id, 0, "indicator.session", { state }).catch(() => {});
+    await api.tabs.sendMessage(tab.id, { op: "dialogs.enable", args: { on: state === "active" } }).catch(() => {});
   }
 
   async function refreshTabs(tabs) {
@@ -23,6 +24,9 @@ export function createPresence({ api, content, sessions }) {
   return {
     refreshTab,
     refreshTabs,
+    async dialogsEnabled(tab) {
+      return (await stateOf(tab)) === "active";
+    },
     async stateFor(tab) {
       const state = await stateOf(tab);
       if (state) marked.add(tab.id);

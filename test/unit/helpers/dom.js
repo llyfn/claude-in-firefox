@@ -3,7 +3,7 @@ import { JSDOM } from "jsdom";
 
 const CONTENT = new URL("../../../extension/content/", import.meta.url);
 
-export function loadContent(html, files = ["tree.js"], { url = "https://example.test/page" } = {}) {
+export function loadContent(html, files = ["tree.js"], { url = "https://example.test/page", before } = {}) {
   const dom = new JSDOM(`<!doctype html><html><head><title>Test</title></head><body>${html}</body></html>`, { url, runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window;
   w.PointerEvent ??= w.MouseEvent;
@@ -11,6 +11,7 @@ export function loadContent(html, files = ["tree.js"], { url = "https://example.
   w.Element.prototype.checkVisibility = function checkVisibility() { return true; };
   w.Document.prototype.execCommand = function execCommand() { return false; };
   Object.defineProperty(w.HTMLElement.prototype, "innerText", { configurable: true, get() { return this.textContent; } });
+  before?.(w);
   for (const file of files) w.eval(readFileSync(new URL(file, CONTENT), "utf8"));
   return w;
 }

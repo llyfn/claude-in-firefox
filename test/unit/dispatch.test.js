@@ -9,8 +9,9 @@ function setup(tools, ownedTab = async (_sessionId, tabId) => ({ id: tabId, url:
   const events = [];
   const activated = [];
   const activity = { start: (id) => events.push(["start", id]), end: (id) => events.push(["end", id]) };
+  const dialogs = { take: (tabId) => (tabId === 5 ? ['Dialog: alert("Hi") → dismissed'] : []) };
   const sessions = { ownedTab, activate: async (tab) => activated.push(tab.id), tabChanges: async () => changes, close: async (id) => closed.push(id) };
-  return { dispatch: createDispatcher({ tools, sessions, activity, control: { run: (_id, fn) => fn(new AbortController().signal), close: async (id) => closed.push(id) }, send: (m) => sent.push(m) }), sent, closed, events, activated };
+  return { dispatch: createDispatcher({ tools, sessions, activity, control: { run: (_id, fn) => fn(new AbortController().signal), close: async (id) => closed.push(id) }, dialogs, send: (m) => sent.push(m) }), sent, closed, events, activated };
 }
 const call = (tool, args = {}, id = "1:1") => ({ type: "call", id, sessionId: "s", tool, args });
 
@@ -116,7 +117,7 @@ test("Stop rejects the running and queued calls of the session with one result e
   const ran = [];
   const tools = { slow: { tabScoped: true, run: ({ args, signal }) => { ran.push(args.n); return new Promise((resolve) => signal.addEventListener("abort", () => resolve("late"), { once: true })); } } };
   const sent = [];
-  const dispatch = createDispatcher({ tools, sessions, activity: { start() {}, end() {} }, control, send: (m) => sent.push(m) });
+  const dispatch = createDispatcher({ tools, sessions, activity: { start() {}, end() {} }, control, dialogs: { take: () => [] }, send: (m) => sent.push(m) });
   const first = dispatch(call("slow", { tabId: 1, n: 1 }, "1:1"));
   const second = dispatch(call("slow", { tabId: 1, n: 2 }, "1:2"));
   await new Promise((resolve) => setImmediate(resolve));
@@ -126,4 +127,14 @@ test("Stop rejects the running and queued calls of the session with one result e
   assert.deepEqual(ran, [1]);
   const later = await dispatch(call("slow", { tabId: 1, n: 3 }, "1:3")).then(() => sent.at(-1));
   assert.equal(later.content[0].text, STOPPED_MESSAGE);
+});
+
+test("dialog reports are added only to calls that own the tab", async () => {
+  const tools = { look: { tabScoped: true, run: async () => "ok" } };
+  const { dispatch, sent } = setup(tools);
+  await dispatch(call("look", { tabId: 5 }));
+  assert.deepEqual(sent[0].content.map((b) => b.text), ["ok", 'Dialog: alert("Hi") → dismissed']);
+  const denied = setup(tools, async () => { throw new Error("Tab 5 is not in this session's window. Valid tab IDs: 1"); });
+  await denied.dispatch(call("look", { tabId: 5 }));
+  assert.deepEqual(denied.sent[0].content.map((b) => b.text), ["Tab 5 is not in this session's window. Valid tab IDs: 1"]);
 });

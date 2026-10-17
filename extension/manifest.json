@@ -19,7 +19,7 @@
       "all_frames": true,
       "match_about_blank": true,
       "run_at": "document_start",
-      "js": ["content/console-hook.js", "content/dom.js", "content/tree.js", "content/form.js", "content/text.js", "content/input.js", "content/router.js"]
+      "js": ["content/console-hook.js", "content/dialogs.js", "content/dom.js", "content/tree.js", "content/form.js", "content/text.js", "content/input.js", "content/router.js"]
     },
     {
       "matches": ["<all_urls>"],

@@ -1,6 +1,6 @@
 import { STOPPED_MESSAGE } from "./control.js";
 
-export function createDispatcher({ tools, sessions, activity, control, send }) {
+export function createDispatcher({ tools, sessions, activity, control, dialogs, send }) {
   const tabQueues = new Map();
 
   function enqueue(tabId, fn) {
@@ -25,7 +25,8 @@ export function createDispatcher({ tools, sessions, activity, control, send }) {
         await sessions.activate(tab);
         activity.start(tab.id);
         try {
-          return await def.run({ sessionId, args: { ...args, tabId }, tab, signal });
+          const content = toContent(await def.run({ sessionId, args: { ...args, tabId }, tab, signal }));
+          return [...content, ...dialogs.take(tab.id).map((text) => ({ type: "text", text }))];
         } finally {
           activity.end(tab.id);
         }

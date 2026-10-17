@@ -30,6 +30,7 @@ export const TOOLS = [
       "* Prefer ref targets from read_page or find over coordinates when you have them.",
       "* Click the center of elements.",
       "* Clicks, type and key wait up to 0.5 s for a navigation to start and then up to 10 s for it to finish, and report where the page went.",
+      "* In this session's tabs, alert() is dismissed, confirm() answers OK and prompt() returns its default text; the result shows each dialog and the answer given.",
       '* key takes space-separated keys or chords, e.g. "Enter", "Tab", "shift+Tab", "cmd+a", "Page_Down". Use "cmd" on macOS.',
     ].join("\n"),
     inputSchema: {
