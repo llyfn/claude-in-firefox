@@ -320,7 +320,8 @@ describe("console and network", () => {
 
   test("clear empties the console buffer", async () => {
     const tabId = await openTab("/console.html");
-    await eventually(async () => assert.match(textOf(await h.call("read_console_messages", { tabId, clear: true })), /page loaded/));
+    await eventually(async () => assert.match(textOf(await h.call("read_console_messages", { tabId })), /page loaded/));
+    assert.match(textOf(await h.call("read_console_messages", { tabId, clear: true })), /page loaded/);
     assert.match(textOf(await h.call("read_console_messages", { tabId, pattern: "page loaded" })), /No console messages found/);
   });
 });
