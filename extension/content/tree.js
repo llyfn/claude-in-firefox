@@ -3,7 +3,7 @@
   const cf = (globalThis.__cf ??= {});
 
   const MAX_NODES = 10_000;
-  const REDACTED = "[value redacted]";
+  const REDACTED = "(sensitive value hidden)";
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "META", "LINK", "TITLE", "NOSCRIPT", "TEMPLATE", "CLAUDE-FIREFOX-INDICATOR"]);
   const LANDMARK_TAGS = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "NAV", "MAIN", "HEADER", "FOOTER", "SECTION", "ARTICLE", "ASIDE"]);
   const INTERACTIVE_TAGS = new Set(["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA", "DETAILS", "SUMMARY"]);
@@ -93,6 +93,13 @@
     return direct.length >= 3 ? direct : "";
   }
 
+  function expandedState(el) {
+    const aria = el.getAttribute("aria-expanded");
+    if (aria === "true" || aria === "false") return aria === "true";
+    const parent = tagOf(el) === "SUMMARY" ? el.parentElement : null;
+    return parent && tagOf(parent) === "DETAILS" ? parent.open : null;
+  }
+
   function fieldValue(el) {
     const tag = tagOf(el);
     const textual = tag === "TEXTAREA" || (tag === "INPUT" && !NON_TEXT_INPUTS.has(el.type));
@@ -143,9 +150,15 @@
     if (name) node.name = name;
     if (interactive) node.interactive = true;
     if (el.checked === true || el.getAttribute("aria-checked") === "true") node.checked = true;
+    const expanded = expandedState(el);
+    if (expanded != null) node.expanded = expanded;
+    if (el.getAttribute("aria-selected") === "true") node.selected = true;
+    if (el.getAttribute("aria-pressed") === "true") node.pressed = true;
     if (el.disabled === true || el.getAttribute("aria-disabled") === "true") node.disabled = true;
     for (const attr of ["href", "type", "placeholder"]) {
-      const value = el.getAttribute(attr);
+      let value = el.getAttribute(attr);
+      // SVG links expose href as an SVGAnimatedString, so only string hrefs are resolved.
+      if (attr === "href" && value && typeof el.href === "string") value = el.href;
       if (value && !(attr === "placeholder" && value === name)) node[attr] = clean(value, 200);
     }
     const value = fieldValue(el);

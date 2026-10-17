@@ -68,7 +68,7 @@ export const TOOLS = [
   },
   {
     name: "read_page",
-    description: 'Return an accessibility-tree outline of the page. Each element gets a stable ref (e.g. ref_12) usable with computer, form_input and file_upload. filter "interactive" lists only visible on-screen controls; the default "all" also includes off-screen and hidden content. Output is limited to max_chars (default 50000) and truncated at a line boundary with a note; narrow it with depth or ref_id. Password and payment field values are redacted. Cross-origin iframe contents are included with refs like f7_ref_3.',
+    description: 'Return an accessibility-tree outline of the page. Each element gets a stable ref (e.g. ref_12) usable with computer, form_input and file_upload. filter "interactive" lists only visible on-screen controls; the default "all" also includes off-screen and hidden content. Output is limited to max_chars (default 50000) and truncated at a line boundary with a note; narrow it with depth or ref_id. Password, one-time-code and payment field values are hidden. Lines show states such as (checked), (selected), (expanded), (collapsed), (pressed) and (disabled), and links show absolute URLs. Cross-origin iframe contents are included with refs like f7_ref_3.',
     inputSchema: {
       type: "object",
       properties: {

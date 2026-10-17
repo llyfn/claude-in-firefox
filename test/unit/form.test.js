@@ -95,3 +95,10 @@ test("setFiles refuses elements that are not file inputs", () => {
   const w = loadContent(`<label for="n">Name</label><input id="n">`, FILES);
   assert.throws(() => w.__cf.form.setFiles({ ref: refByName(w, "Name"), files: [], guard: null }), /is not an <input type="file">/);
 });
+
+test("page text uses main or role=main when it is the longest content element", () => {
+  const w = loadContent(`<nav>Site navigation</nav><div role="main">The main region holds the most text here</div><article>Short</article>`, FILES);
+  const page = w.__cf.text.pageText();
+  assert.equal(page.tag, "div");
+  assert.equal(page.text, "The main region holds the most text here");
+});
