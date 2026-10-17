@@ -55,50 +55,11 @@ jobs:
           Invoke-WebRequest "https://download.mozilla.org/?product=firefox-devedition-latest-ssl&os=win64&lang=en-US" -OutFile "$env:RUNNER_TEMP\firefox.exe"
           Start-Process -FilePath "$env:RUNNER_TEMP\firefox.exe" -ArgumentList "/S" -Wait
           "FIREFOX_BIN=C:\Program Files\Firefox Developer Edition\firefox.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - name: Diagnostics before e2e
-        shell: bash
-        run: |
-          npx -c 'node -e "console.log(process.env.npm_execpath)"' || true
-          ls -la "$FIREFOX_BIN" || true
-          if [ "$RUNNER_OS" = Linux ]; then "$FIREFOX_BIN" --version; file "$RUNNER_TEMP/firefox.tar.xz"; else ls "/c/Program Files"; fi
       - run: npm run install-host -- --no-claude
-      - name: Diagnostics resize (Linux)
-        if: runner.os == 'Linux'
-        continue-on-error: true
-        run: |
-          cat > "$RUNNER_TEMP/diag.mjs" <<EOF
-          import { startHarness, textOf } from "$GITHUB_WORKSPACE/test/e2e/harness.js";
-          const h = await startHarness();
-          try {
-            await h.call("tabs_context", { createIfEmpty: true });
-            const tabId = Number(/Created tab (\d+)/.exec(textOf(await h.call("tabs_create")))[1]);
-            await h.call("navigate", { tabId, url: h.fixtures.a + "/basic.html" });
-            const context = await h.bidi.contextOf("/basic.html");
-            const sizes = "JSON.stringify({ outer: [outerWidth, outerHeight], inner: [innerWidth, innerHeight], screen: [screen.width, screen.height, screen.availWidth, screen.availHeight, screen.colorDepth] })";
-            console.log("before", await h.bidi.evaluate(context, sizes));
-            const t = Date.now();
-            const r = await h.call("resize_window", { tabId, width: 1280, height: 900 });
-            console.log("resize took", Date.now() - t, "ms:", textOf(r));
-            console.log("after", await h.bidi.evaluate(context, sizes));
-          } finally {
-            await h.close();
-          }
-          EOF
-          echo "--- default xvfb-run screen"
-          xvfb-run -a node "$RUNNER_TEMP/diag.mjs" || true
-          echo "--- 1920x1080x24 screen"
-          xvfb-run -a -s "-screen 0 1920x1080x24" node "$RUNNER_TEMP/diag.mjs" || true
+      # Firefox opens windows maximized on screens smaller than 1280x1040, and with no window manager resize_window cannot restore them.
       - name: End-to-end tests (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run e2e
       - name: End-to-end tests (Windows)
         if: runner.os == 'Windows'
         run: npm run e2e
-      - name: Diagnostics after e2e (Windows)
-        if: always() && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='cmd.exe' OR Name='firefox.exe'" | Select-Object ProcessId, ParentProcessId, CommandLine | Format-List
-          reg query "HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge"
-          Get-Content "$env:LOCALAPPDATA\claude-in-firefox\native-host.cmd"
-          Get-Content "$env:LOCALAPPDATA\claude-in-firefox\claude_firefox_bridge.json"
