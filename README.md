@@ -30,7 +30,7 @@ Both halves run from one copy of the package that the installer puts in an app d
 
 ## Update
 
-Run `npx @llyfn/claude-in-firefox@latest install`, and install the `.xpi` from the newer release (the add-on does not update itself).
+Run `npx @llyfn/claude-in-firefox@latest install`, and install the `.xpi` from the newer release (the add-on does not update itself). The installer replaces an existing `firefox` entry, including a 0.2 entry that points into a clone, only when it registers with Claude Code itself; with `--no-claude`, or without `claude` on PATH, run `claude mcp remove --scope user firefox` before the `claude mcp add` command it prints.
 
 ## Uninstall
 
