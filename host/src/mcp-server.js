@@ -143,7 +143,7 @@ async function withFileContents({ paths, ...rest }) {
 }
 
 export function createMcpServer({ bridge }) {
-  const server = new Server({ name: "claude-in-firefox", version: "0.1.0" }, { capabilities: { tools: {} } });
+  const server = new Server({ name: "claude-in-firefox", version: "0.2.0" }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     try {

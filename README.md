@@ -10,7 +10,7 @@ Drive your everyday Firefox from Claude Code. A Firefox extension plus a local M
 Claude Code ──MCP stdio──▶ host/src/mcp-server.js ──unix socket──▶ native-host.js ──native messaging──▶ extension
 ```
 
-Each Claude Code session gets its own Firefox tab group (`Claude · xxxx`) and can only touch tabs inside it. An orange glow and a phantom cursor show which tab Claude is working in.
+Each Claude Code session gets its own Firefox window, opened in the background without taking focus, and can only touch tabs in that window (plus popups opened from it). The window title and, when tab groups are enabled, a tab group show the session's status: ⌛ working, ✅ idle, ⏸ stopped. A violet glow and a phantom cursor show which tab Claude is working in.
 
 The MCP server runs from this repository. The native host is the process Firefox launches, and it runs from a copy outside the repository (`~/Library/Application Support/claude-in-firefox/host/` on macOS, `~/.local/share/claude-in-firefox/host/` on Linux), because macOS privacy protection blocks processes that Firefox launches from reading `~/Desktop`, `~/Documents` and `~/Downloads`.
 
@@ -33,9 +33,9 @@ To update, install the `.xpi` from the newer release (the add-on does not update
 
 | Tool | What it does |
 |---|---|
-| `tabs_context`, `tabs_create`, `tabs_close` | List, open and close tabs in this session's group |
+| `tabs_context`, `tabs_create`, `tabs_close` | List, open and close tabs in this session's window |
 | `navigate` | Load a URL (or go back/forward) and wait up to 15 s for it to finish |
-| `computer` | Clicks, typing, keys, scroll, hover, drag, screenshots, zoom, wait |
+| `computer` | Clicks, typing, keys, scroll, hover, drag, screenshots, zoom, wait (up to 30 s); clicks, typing and keys wait for any navigation they start |
 | `read_page`, `find` | Accessibility-tree outline with stable `ref_N` ids; keyword search over it |
 | `form_input`, `file_upload` | Set form controls by ref; put local files into file inputs |
 | `get_page_text` | Readable text of the main content |
@@ -45,10 +45,12 @@ To update, install the `.xpi` from the newer release (the add-on does not update
 
 ## Safety
 
+- **Stop button.** Every page in a session window shows a "Claude is using this window · Stop" bar. Stop cancels the running call and makes every later call fail until you press Resume. Only a real click works; Claude's synthetic input cannot press it.
+- **Dialogs are answered automatically in session tabs.** alert() is dismissed, confirm() answers OK, prompt() returns its default text, and "Leave page?" prompts are suppressed; Claude sees each dialog and the answer. While a session is stopped, dialogs appear normally.
 - **No domain blocking.** Unlike Claude in Chrome, this extension blocks no sites and shows no per-site permission prompts. Claude Code's own permission settings are the only gate.
 - **Firefox's own restrictions still apply.** Firefox keeps every extension off its privileged pages (`about:*`, other extensions' pages) and off the domains listed in the `extensions.webextensions.restrictedDomains` pref, such as addons.mozilla.org. To allow those domains, clear that pref and set `privacy.resistFingerprinting.block_mozAddonManager` to `true` in `about:config`. The installer never changes Firefox prefs.
 - **Two guards are kept:**
-  - Password, one-time-code and payment-card field values show as `[value redacted]` in `read_page` and as `[redacted]` in `form_input` output. Nothing else is redacted: screenshots and zoom, and console and network logs can all show sensitive values.
+  - Password, one-time-code and payment-card field values show as `(sensitive value hidden)` in `read_page` and as `(hidden)` in `form_input` output. Nothing else is redacted: screenshots and zoom, and console and network logs can all show sensitive values.
   - Input is aborted if the tab switched to another domain mid-action.
 - **Prompt injection is a real risk.** Web pages can contain text written to steer Claude. Claude acts with your logged-in sessions, so review what you ask it to do on sensitive sites, especially if you run Claude Code without permission prompts.
 
@@ -60,9 +62,10 @@ To update, install the `.xpi` from the newer release (the add-on does not update
   - Clipboard paste is unavailable.
   - Pages that ignore script-generated events will not react.
 - Only one Firefox profile can run the extension at a time; a second profile's native host exits.
-- Disabling, reloading or updating the add-on can break `console` in tabs that were already open; reload those tabs.
-- Reloading the extension or restarting Firefox forgets the session-to-group mapping. Call `tabs_context` with `createIfEmpty: true` again.
-- Tab groups need Firefox's tab groups feature: `browser.tabs.groups.enabled` must be `true` in `about:config`.
+- Disabling, reloading or updating the add-on can break `console` and page dialogs in tabs that were already open; reload those tabs.
+- A dialog raised by a page's very first scripts, before the add-on has marked the tab as a session tab, appears normally and stalls that call until it times out.
+- Firefox opens every new window in front. When you are using Firefox, the add-on gives focus back to your window; when another app is in front, opening a session's window brings Firefox to the front.
+- Updating to 0.2.0 asks for the new "sessions" permission, which stores each session's id on its window so sessions survive add-on reloads and Firefox restarts.
 
 ## Development
 

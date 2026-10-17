@@ -28,14 +28,14 @@ async function eventually(check, timeoutMs = 5000) {
 }
 
 describe("tabs and navigation", () => {
-  test("tabs_context asks for createIfEmpty before a group exists", async () => {
+  test("tabs_context asks for createIfEmpty before a window exists", async () => {
     assert.match(textOf(await h.call("tabs_context")), /createIfEmpty: true/);
   });
 
-  test("tabs_context with createIfEmpty creates a group holding one tab", async () => {
+  test("tabs_context with createIfEmpty opens a window holding one tab", async () => {
     const ctx = JSON.parse(textOf(await h.call("tabs_context", { createIfEmpty: true })));
     assert.equal(ctx.availableTabs.length, 1);
-    assert.ok(Number.isInteger(ctx.tabGroupId));
+    assert.ok(Number.isInteger(ctx.windowId));
   });
 
   test("navigate waits for the load and reports URL and title", async () => {
@@ -53,17 +53,17 @@ describe("tabs and navigation", () => {
   test("another session cannot touch this session's tabs", async () => {
     const tabId = await openTab("/basic.html");
     const other = await h.connect();
-    const noGroup = await other.call("navigate", { tabId, url: "about:blank" });
-    assert.equal(noGroup.isError, true);
-    assert.match(textOf(noGroup), /no tab group yet/);
+    const noWindow = await other.call("navigate", { tabId, url: "about:blank" });
+    assert.equal(noWindow.isError, true);
+    assert.match(textOf(noWindow), /no window yet/);
     await other.call("tabs_context", { createIfEmpty: true });
     const denied = await other.call("navigate", { tabId, url: "about:blank" });
     assert.equal(denied.isError, true);
-    assert.match(textOf(denied), new RegExp(`Tab ${tabId} is not in this session's tab group`));
+    assert.match(textOf(denied), new RegExp(`Tab ${tabId} is not in this session's window`));
     await other.close();
   });
 
-  test("closed tabs leave the group and can no longer be used", async () => {
+  test("closed tabs leave the window and can no longer be used", async () => {
     const tabId = await openTab("/basic.html");
     await h.call("tabs_close", { tabId });
     const ctx = JSON.parse(textOf(await h.call("tabs_context")));
@@ -83,13 +83,22 @@ describe("reading pages", () => {
   test("read_page shows landmarks, refs, options, shadow DOM and redacted secrets", async () => {
     const tabId = await openTab("/tree.html");
     const text = textOf(await h.call("read_page", { tabId }));
-    assert.match(text, /link "Home" \[ref_\d+\] href="\/basic.html"/);
+    assert.match(text, /link "Home" \[ref_\d+\] href="http:\/\/127\.0\.0\.1:\d+\/basic\.html"/);
     assert.match(text, /textbox "Email" \[ref_\d+\] type="email" placeholder="you@example.com"/);
     assert.match(text, /option "United States" \(selected\) value="us"/);
-    assert.match(text, /textbox "Password" \[ref_\d+\] type="password" value="\[value redacted\]"/);
+    assert.match(text, /textbox "Password" \[ref_\d+\] type="password" value="\(sensitive value hidden\)"/);
     assert.doesNotMatch(text, /hunter2/);
     assert.match(text, /button "Shadow action" \[ref_\d+\]/);
     assert.match(text, /\n\nViewport: \d+x\d+$/);
+  });
+
+  test("read_page shows expanded, selected and pressed states", async () => {
+    const tabId = await openTab("/tree.html");
+    const text = textOf(await h.call("read_page", { tabId }));
+    assert.match(text, /button "Menu" \[ref_\d+\] \(collapsed\)/);
+    assert.match(text, /tab "Overview" \[ref_\d+\] \(selected\)/);
+    assert.match(text, /button "Bold" \[ref_\d+\] \(pressed\)/);
+    assert.match(text, /button "More options" \[ref_\d+\] \(collapsed\)/);
   });
 
   test("refs are stable between calls", async () => {
@@ -162,7 +171,13 @@ describe("forms and page text", () => {
   });
 
   test("form_input never echoes password values", async () => {
-    assert.equal(textOf(await h.call("form_input", { tabId, ref: refFor(tree, "textbox", "Secret"), value: "s3cret" })), "Set password value to [redacted] (previous: [redacted])");
+    assert.equal(textOf(await h.call("form_input", { tabId, ref: refFor(tree, "textbox", "Secret"), value: "s3cret" })), "Set password value to (hidden) (previous: (hidden))");
+  });
+
+  test("form_input on a wrapper sets the control inside it", async () => {
+    const r = textOf(await h.call("form_input", { tabId, ref: refFor(tree, "group", "Nickname field"), value: "Ada" }));
+    assert.match(r, /\(used the <input> inside ref_\d+\)$/);
+    assert.match(await log(), /nickname Ada/);
   });
 
   test("get_page_text prefers the article element", async () => {
@@ -241,7 +256,7 @@ describe("computer", () => {
     assert.match(await log(), /dropped payload/);
   });
 
-  test("target=_blank links open in a new tab inside the session's group", async () => {
+  test("target=_blank links open in a new tab inside the session's window", async () => {
     const link = /link "Open basic in new tab" \[(ref_\d+)\]/.exec(textOf(await h.call("read_page", { tabId })))[1];
     const opened = Number(/link opened in new tab (\d+)/.exec(textOf(await computer({ action: "left_click", ref: link })))[1]);
     const ctx = JSON.parse(textOf(await h.call("tabs_context")));
@@ -282,6 +297,14 @@ describe("console and network", () => {
     const filtered = textOf(await h.call("read_console_messages", { tabId, pattern: "boom" }));
     assert.match(filtered, /boom on load/);
     assert.doesNotMatch(filtered, /page loaded/);
+  });
+
+  test("console errors include a stack trace", async () => {
+    const tabId = await openTab("/console.html");
+    await eventually(async () => {
+      const text = textOf(await h.call("read_console_messages", { tabId, pattern: "boom on load" }));
+      assert.match(text, /Error: boom on load\n {4}\S*@http:\/\/127\.0\.0\.1:\d+\/console\.html:\d+:\d+/);
+    });
   });
 
   test("network requests and later console calls are captured with details", async () => {
@@ -325,5 +348,56 @@ describe("file_upload and browser_batch", () => {
     assert.match(text, /\[2:computer\] Element ref_999999 not found/);
     assert.doesNotMatch(text, /\[3:/);
     assert.equal(imagesOf(result).length, 1);
+  });
+});
+
+describe("session window", () => {
+  let tabId;
+  const log = async () => textOf(await h.call("read_console_messages", { tabId }));
+
+  before(async () => {
+    tabId = await openTab("/session.html");
+  });
+
+  test("the session's active tab is visible even though its window is not focused", async () => {
+    await eventually(async () => assert.match(await log(), /visibility visible/));
+    assert.doesNotMatch(await log(), /visibility hidden/);
+  });
+
+  test("confirm and prompt are answered automatically and reported", async () => {
+    const confirmed = textOf(await h.call("find", { tabId, query: "Confirm button" }));
+    const ref = /- (ref_\d+):/.exec(confirmed)[1];
+    const r = textOf(await h.call("computer", { tabId, action: "left_click", ref }));
+    assert.match(r, /Dialog: confirm\("Delete this item\?"\) → OK/);
+    assert.match(await log(), /confirm returned true/);
+    const promptRef = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query: "Prompt button" })))[1];
+    assert.match(textOf(await h.call("computer", { tabId, action: "left_click", ref: promptRef })), /Dialog: prompt\("Name\?"\) → "Ada"/);
+  });
+
+  test("page beforeunload handlers are suppressed in session tabs", async () => {
+    const ref = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query: "Fire beforeunload button" })))[1];
+    await h.call("computer", { tabId, action: "left_click", ref });
+    const text = await log();
+    assert.match(text, /fired beforeunload/);
+    assert.doesNotMatch(text, /page beforeunload ran/);
+  });
+
+  test("Claude's click at the Stop pill's position reaches the page beneath", async () => {
+    const shot = textOf(await h.call("computer", { tabId, action: "screenshot" }));
+    const [, w, hgt] = /Screenshot (\d+)x(\d+)/.exec(shot).map(Number);
+    await h.call("computer", { tabId, action: "left_click", coordinate: [Math.round(w / 2), hgt - 20] });
+    assert.match(await log(), /bottom clicked/);
+  });
+
+  test("stringified arguments are accepted", async () => {
+    const r = await h.call("computer", { tabId: String(tabId), action: "screenshot", scale: "0.5" });
+    assert.equal(r.isError, false, textOf(r));
+  });
+
+  test("pushState and form submissions are reported after the click", async () => {
+    const pushRef = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query: "Push state button" })))[1];
+    assert.match(textOf(await h.call("computer", { tabId, action: "left_click", ref: pushRef })), /→ URL changed to http:\/\/127\.0\.0\.1:\d+\/session\.html\?pushed/);
+    const goRef = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query: "Go to basic button" })))[1];
+    assert.match(textOf(await h.call("computer", { tabId, action: "left_click", ref: goRef })), /→ Navigated to http:\/\/127\.0\.0\.1:\d+\/basic\.html\?? — "Basic page"/);
   });
 });

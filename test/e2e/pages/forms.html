@@ -22,3 +22,4 @@
   document.querySelectorAll("input[name=size]").forEach((r) => r.addEventListener("change", () => log("size " + r.value)));
   document.getElementById("notes").addEventListener("input", () => log("notes input"));
 </script>
+<div role="group" aria-label="Nickname field"><span>Nickname</span><input id="nickname" oninput="log('nickname ' + this.value)"></div>
