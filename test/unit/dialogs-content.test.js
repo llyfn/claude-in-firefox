@@ -59,3 +59,11 @@ test("in a session tab the page's beforeunload handlers never run", () => {
   w.dispatchEvent(new w.Event("beforeunload"));
   assert.equal(ran, 1);
 });
+
+test("a long prompt default comes back whole while the report is cut", async () => {
+  const { w, sent } = setup({ on: true });
+  await tick();
+  const long = "x".repeat(600);
+  assert.equal(w.prompt("Q", long), long);
+  assert.equal(sent.find((m) => m.type === "dialog").answer.length, 500);
+});

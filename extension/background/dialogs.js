@@ -9,17 +9,17 @@ export function formatDialog({ kind, message, answer }) {
 export function createDialogLog() {
   const byTab = new Map();
   return {
-    add(tabId, { kind, message, answer }) {
+    add(tabId, sessionId, { kind, message, answer }) {
       if (!KINDS.has(kind)) return;
       const list = byTab.get(tabId) ?? [];
-      list.push({ kind, message: String(message ?? ""), answer });
+      list.push({ sessionId, kind, message: String(message ?? ""), answer });
       if (list.length > MAX_PER_TAB) list.splice(0, list.length - MAX_PER_TAB);
       byTab.set(tabId, list);
     },
-    take(tabId) {
+    take(tabId, sessionId) {
       const list = byTab.get(tabId) ?? [];
       byTab.delete(tabId);
-      return list.map(formatDialog);
+      return list.filter((entry) => entry.sessionId === sessionId).map(formatDialog);
     },
     removeTab(tabId) {
       byTab.delete(tabId);

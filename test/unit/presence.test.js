@@ -58,3 +58,11 @@ test("dialog auto-answering is on only for tabs of a running session", async () 
   stopped.add("s");
   assert.equal(await presence.dialogsEnabled({ id: 1 }), false);
 });
+
+test("a tab that answered dialogsEnabled is switched off when it leaves the session", async () => {
+  const { presence, calls, membership } = setup();
+  assert.equal(await presence.dialogsEnabled({ id: 1 }), true);
+  membership.delete(1);
+  await presence.refreshTab({ id: 1 });
+  assert.deepEqual(calls, [[1, "indicator.session", null], [1, "dialogs.enable", false]]);
+});

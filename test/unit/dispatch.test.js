@@ -9,7 +9,7 @@ function setup(tools, ownedTab = async (_sessionId, tabId) => ({ id: tabId, url:
   const events = [];
   const activated = [];
   const activity = { start: (id) => events.push(["start", id]), end: (id) => events.push(["end", id]) };
-  const dialogs = { take: (tabId) => (tabId === 5 ? ['Dialog: alert("Hi") → dismissed'] : []) };
+  const dialogs = { take: (tabId, sessionId) => (tabId === 5 && sessionId === "s" ? ['Dialog: alert("Hi") → dismissed'] : []) };
   const sessions = { ownedTab, activate: async (tab) => activated.push(tab.id), tabChanges: async () => changes, close: async (id) => closed.push(id) };
   return { dispatch: createDispatcher({ tools, sessions, activity, control: { run: (_id, fn) => fn(new AbortController().signal), close: async (id) => closed.push(id) }, dialogs, send: (m) => sent.push(m) }), sent, closed, events, activated };
 }

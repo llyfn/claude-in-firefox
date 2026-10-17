@@ -32,7 +32,11 @@ api.tabs.onRemoved.addListener((tabId) => dialogs.removeTab(tabId));
 api.windows.onRemoved.addListener((windowId) => sessions.windowRemoved(windowId));
 api.runtime.onMessage.addListener((msg, sender) => {
   if (!sender.tab) return undefined;
-  if (msg?.type === "dialog") dialogs.add(sender.tab.id, msg);
+  if (msg?.type === "dialog") {
+    sessions.sessionOfTab(sender.tab).then((sessionId) => {
+      if (sessionId) dialogs.add(sender.tab.id, sessionId, msg);
+    }).catch(() => {});
+  }
   if (msg?.type === "dialogs.query") return presence.dialogsEnabled(sender.tab).then((on) => ({ on }));
   if (msg?.type === "indicator.query") return presence.stateFor(sender.tab).then((state) => ({ state }));
   if (msg?.type === "control") {

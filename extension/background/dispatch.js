@@ -26,7 +26,7 @@ export function createDispatcher({ tools, sessions, activity, control, dialogs, 
         activity.start(tab.id);
         try {
           const content = toContent(await def.run({ sessionId, args: { ...args, tabId }, tab, signal }));
-          return [...content, ...dialogs.take(tab.id).map((text) => ({ type: "text", text }))];
+          return [...content, ...dialogs.take(tab.id, sessionId).map((text) => ({ type: "text", text }))];
         } finally {
           activity.end(tab.id);
         }

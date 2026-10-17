@@ -25,7 +25,9 @@ export function createPresence({ api, content, sessions }) {
     refreshTab,
     refreshTabs,
     async dialogsEnabled(tab) {
-      return (await stateOf(tab)) === "active";
+      const on = (await stateOf(tab)) === "active";
+      if (on) marked.add(tab.id);
+      return on;
     },
     async stateFor(tab) {
       const state = await stateOf(tab);

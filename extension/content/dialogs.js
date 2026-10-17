@@ -22,7 +22,7 @@
     },
   };
 
-  // Registered before any page script, so stopping propagation here keeps page handlers from asking "Leave page?".
+  // At document_start this runs before page scripts, so stopping propagation keeps their handlers from asking "Leave page?".
   window.addEventListener("beforeunload", (event) => { if (enabled) event.stopImmediatePropagation(); }, true);
 
   browser.runtime.sendMessage({ type: "dialogs.query" }).then((reply) => {
@@ -54,8 +54,8 @@
   }, page, { defineAs: "confirm" });
   exportFunction(function prompt(...args) {
     if (!enabled) return originals.prompt.call(this, ...args);
-    const answer = args[1] === undefined ? "" : text(args[1]);
-    report("prompt", args[0], answer);
+    const answer = args[1] === undefined ? "" : String(args[1]);
+    report("prompt", args[0], text(answer));
     return answer;
   }, page, { defineAs: "prompt" });
 })();
