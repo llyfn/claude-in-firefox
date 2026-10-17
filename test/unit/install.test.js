@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -33,6 +35,20 @@ function binDir(...names) {
   return dir;
 }
 
+// Unix refuses to remove entries of a read-only directory; Windows refuses to remove a directory that is a process's working directory.
+async function blockRemoval(dir) {
+  if (process.platform !== "win32") {
+    fs.chmodSync(path.dirname(dir), 0o555);
+    return async () => fs.chmodSync(path.dirname(dir), 0o755);
+  }
+  const holder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: dir });
+  await once(holder, "spawn");
+  return async () => {
+    holder.kill();
+    await once(holder, "exit");
+  };
+}
+
 test("install from a clone packs it, installs the tarball into the app directory, writes the wrapper and manifest, and registers with Claude Code", async () => {
   const home = tmp();
   const { run, calls } = fakeRun();
@@ -59,7 +75,6 @@ test("install from a clone packs it, installs the tarball into the app directory
 
   assert.equal(result.wrapperPath, path.join(appDir, "native-host"));
   assert.equal(fs.readFileSync(result.wrapperPath, "utf8"), `#!/bin/sh\nexec "/opt/node/bin/node" "${path.join(pkgDir, "host/src/native-host.js")}" "$@"\n`);
-  assert.equal(fs.statSync(result.wrapperPath).mode & 0o777, 0o755);
   assert.equal(result.manifestPath, path.join(home, "Library/Application Support/Mozilla/NativeMessagingHosts/claude_firefox_bridge.json"));
   assert.deepEqual(JSON.parse(fs.readFileSync(result.manifestPath, "utf8")), {
     name: "claude_firefox_bridge",
@@ -70,6 +85,11 @@ test("install from a clone packs it, installs the tarball into the app directory
   });
   assert.deepEqual(result.mcpConfig, { mcpServers: { firefox: { command: "/opt/node/bin/node", args: [cli, "mcp"] } } });
   assert.equal(result.claudeCommand, `claude mcp add --scope user firefox -- "/opt/node/bin/node" "${cli}" mcp`);
+});
+
+test("the macOS and Linux wrapper is executable", { skip: process.platform === "win32" && "Windows has no Unix file modes" }, async () => {
+  const result = await install({ homeDir: tmp(), platform: "linux", env: { PATH: "", npm_execpath: "/n/npm-cli.js" }, nodePath: "/usr/bin/node", packageRoot: REPO, run: fakeRun().run, claude: false });
+  assert.equal(fs.statSync(result.wrapperPath).mode & 0o777, 0o755);
 });
 
 test("install from a published copy installs its own version from the registry", async () => {
@@ -229,10 +249,9 @@ test("uninstall fails before touching Claude Code on an unsupported platform, an
   assert.deepEqual(clean.failed, []);
 
   const home = tmp();
-  const parent = path.join(home, ".local/share");
-  const appDir = path.join(parent, "claude-in-firefox");
+  const appDir = path.join(home, ".local/share/claude-in-firefox");
   fs.mkdirSync(path.join(appDir, "sub"), { recursive: true });
-  fs.chmodSync(parent, 0o555);
+  const unblock = await blockRemoval(appDir);
   try {
     const result = await uninstall({ homeDir: home, platform: "linux", env: { PATH: "" }, run });
     assert.deepEqual(result.removed, []);
@@ -240,7 +259,7 @@ test("uninstall fails before touching Claude Code on an unsupported platform, an
     assert.equal(result.failed[0].path, appDir);
     assert.equal(typeof result.failed[0].error, "string");
   } finally {
-    fs.chmodSync(parent, 0o755);
+    await unblock();
   }
 });
 
@@ -253,7 +272,7 @@ test("findExecutable checks PATH, with PATHEXT on Windows", () => {
   assert.equal(findExecutable("claude", { PATH: win, PATHEXT: ".EXE;.CMD" }, "win32"), path.join(win, "claude.cmd"));
 });
 
-test("stableNodePath returns the first executable node on PATH without resolving symlinks and falls back to the running node", () => {
+test("stableNodePath returns the first executable node on PATH without resolving symlinks", { skip: process.platform === "win32" && "Windows has no execute permission bit" }, () => {
   const root = tmp();
   const real = path.join(root, "Cellar/node/1.0/bin");
   const stable = path.join(root, "bin");
@@ -263,7 +282,10 @@ test("stableNodePath returns the first executable node on PATH without resolving
   fs.symlinkSync(path.join(real, "node"), path.join(stable, "node"));
   fs.writeFileSync(path.join(noExec, "node"), "", { mode: 0o644 });
   assert.equal(stableNodePath({ PATH: ["relative", path.join(root, "missing"), noExec, stable, real].join(path.delimiter) }, "linux"), path.join(stable, "node"));
-  assert.equal(stableNodePath({ PATH: path.join(root, "missing") }, "linux"), process.execPath);
+});
+
+test("stableNodePath finds node.exe on Windows and falls back to the running node", () => {
+  assert.equal(stableNodePath({ PATH: path.join(tmp(), "missing") }, "linux"), process.execPath);
   const win = binDir("node.exe");
   assert.equal(stableNodePath({ PATH: win }, "win32"), path.join(win, "node.exe"));
 });
@@ -271,6 +293,16 @@ test("stableNodePath returns the first executable node on PATH without resolving
 test("runCommand resolves with output and rejects with the command's error text", async () => {
   assert.equal((await runCommand(process.execPath, ["-e", "console.log('hi')"])).stdout, "hi\n");
   await assert.rejects(runCommand(process.execPath, ["-e", "console.error('nope'); process.exit(3)"]), /failed: nope/);
+});
+
+test("runCommand passes arguments with spaces intact to a .cmd file whose path has a space", { skip: process.platform !== "win32" && "only Windows runs .cmd files through cmd.exe" }, async () => {
+  const dir = path.join(tmp(), "with space");
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, "print-args.js"), "console.log(JSON.stringify(process.argv.slice(2)));\n");
+  const cmd = path.join(dir, "print args.cmd");
+  fs.writeFileSync(cmd, `@"${process.execPath}" "%~dp0print-args.js" %*\r\n`);
+  const args = ["mcp", "C:\\Users\\Jane Doe\\cli.js"];
+  assert.deepEqual(JSON.parse((await runCommand(cmd, args)).stdout), args);
 });
 
 test("unsupported platforms are refused before anything is written", async () => {

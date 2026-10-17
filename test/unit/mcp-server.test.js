@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { encode, onMessages } from "../../host/src/framing.js";
 import { BridgeClient, NOT_CONNECTED_MESSAGE, callTool } from "../../host/src/mcp-server.js";
@@ -9,6 +11,8 @@ import { TOOLS } from "../../host/src/tools.js";
 
 const ok = (text) => ({ content: [{ type: "text", text }], isError: false });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Unix socket paths are limited to about 104 bytes, which macOS's os.tmpdir() leaves too little of.
+const tempAddress = () => (process.platform === "win32" ? `\\\\.\\pipe\\cfb-test-${randomBytes(8).toString("hex")}` : path.join(fs.mkdtempSync("/tmp/cfb-mcp-"), "bridge.sock"));
 
 function fakeBridge(handler) {
   const calls = [];
@@ -62,7 +66,7 @@ test("browser_batch rejects nesting and bad action lists", async () => {
 });
 
 test("file_upload reads files into base64 with names and mime types", async () => {
-  const dir = fs.mkdtempSync("/tmp/cfb-upload-");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cfb-upload-"));
   fs.writeFileSync(path.join(dir, "note.txt"), "hello");
   const bridge = fakeBridge(() => ok("uploaded"));
   await callTool(bridge, "file_upload", { tabId: 1, ref: "ref_1", paths: [path.join(dir, "note.txt")] });
@@ -70,7 +74,7 @@ test("file_upload reads files into base64 with names and mime types", async () =
 });
 
 test("file_upload rejects directories and totals over 10 MB", async () => {
-  const dir = fs.mkdtempSync("/tmp/cfb-upload-");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cfb-upload-"));
   const big = path.join(dir, "big.bin");
   fs.writeFileSync(big, "");
   fs.truncateSync(big, 10 * 1024 * 1024 + 1);
@@ -95,15 +99,14 @@ async function fakeHost(socketPath, onCall) {
 }
 
 test("BridgeClient reports not connected when no host is listening", async () => {
-  const dir = fs.mkdtempSync("/tmp/cfb-mcp-");
-  const client = new BridgeClient({ address: path.join(dir, "bridge.sock"), sessionId: "s" });
+  const client = new BridgeClient({ address: tempAddress(), sessionId: "s" });
   await assert.rejects(client.call("tabs_create", {}, 1000), { message: NOT_CONNECTED_MESSAGE });
   const missing = new BridgeClient({ address: "/tmp/cfb-does-not-exist/bridge.sock", sessionId: "s" });
   await assert.rejects(missing.call("tabs_create", {}, 1000), { message: NOT_CONNECTED_MESSAGE });
 });
 
 test("BridgeClient sends hello once and resolves results by id", async (t) => {
-  const socketPath = path.join(fs.mkdtempSync("/tmp/cfb-mcp-"), "bridge.sock");
+  const socketPath = tempAddress();
   const host = await fakeHost(socketPath, (msg, reply) => reply({ type: "result", id: msg.id, content: [{ type: "text", text: `${msg.tool} ok` }], isError: false }));
   const client = new BridgeClient({ address: socketPath, sessionId: "s1" });
   t.after(async () => { client.close(); await host.close(); });
@@ -115,7 +118,7 @@ test("BridgeClient sends hello once and resolves results by id", async (t) => {
 });
 
 test("BridgeClient times out slow calls", async (t) => {
-  const socketPath = path.join(fs.mkdtempSync("/tmp/cfb-mcp-"), "bridge.sock");
+  const socketPath = tempAddress();
   const host = await fakeHost(socketPath, () => {});
   const client = new BridgeClient({ address: socketPath, sessionId: "s" });
   t.after(async () => { client.close(); await host.close(); });
@@ -123,7 +126,7 @@ test("BridgeClient times out slow calls", async (t) => {
 });
 
 test("BridgeClient fails pending calls when the host goes away and reconnects on the next call", async (t) => {
-  const socketPath = path.join(fs.mkdtempSync("/tmp/cfb-mcp-"), "bridge.sock");
+  const socketPath = tempAddress();
   const first = await fakeHost(socketPath, () => {});
   const client = new BridgeClient({ address: socketPath, sessionId: "s" });
   const pending = client.call("navigate", {}, 5000);
@@ -153,7 +156,7 @@ test("wait calls get their duration plus 10 s and other calls 30 s", async () =>
   assert.deepEqual(bridge.calls.map((c) => c.timeoutMs), [40_000, 30_000, 30_000]);
 });
 
-test("with the Windows transport the client skips directory checks", async (t) => {
+test("with the Windows transport the client skips directory checks", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async (t) => {
   const dir = fs.mkdtempSync("/tmp/cfb-win-");
   fs.chmodSync(dir, 0o755);
   const address = path.join(dir, "bridge.sock");

@@ -7,7 +7,7 @@ import { PACKAGE_VERSION, REGISTRY_KEY, SOCKET_PATH, appDirFor, bridgeAddress, n
 
 const tempRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "cfb-paths-"));
 
-test("verifySocketDir accepts a private directory owned by the current user", async () => {
+test("verifySocketDir accepts a private directory owned by the current user", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async () => {
   const dir = path.join(tempRoot(), "private");
   fs.mkdirSync(dir, { mode: 0o700 });
   await verifySocketDir(dir);
@@ -17,7 +17,7 @@ test("verifySocketDir rejects a missing directory", async () => {
   await assert.rejects(verifySocketDir(path.join(tempRoot(), "missing")), { code: "ENOENT" });
 });
 
-test("verifySocketDir rejects a symlink to a directory", async () => {
+test("verifySocketDir rejects a symlink to a directory", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async () => {
   const root = tempRoot();
   const target = path.join(root, "target");
   fs.mkdirSync(target, { mode: 0o700 });
@@ -25,7 +25,7 @@ test("verifySocketDir rejects a symlink to a directory", async () => {
   await assert.rejects(verifySocketDir(path.join(root, "link")), /is not a directory/);
 });
 
-test("verifySocketDir rejects a directory that other users can access", async () => {
+test("verifySocketDir rejects a directory that other users can access", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async () => {
   const dir = path.join(tempRoot(), "open");
   fs.mkdirSync(dir);
   fs.chmodSync(dir, 0o755);
