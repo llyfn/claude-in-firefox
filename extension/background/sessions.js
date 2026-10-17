@@ -7,6 +7,7 @@ export function createSessions(api) {
   const records = new Map();
   const creating = new Map();
   const recovering = new Map();
+  let opening = Promise.resolve();
   let nextColor = 0;
 
   const tagOf = (sessionId) => `Claude · ${sessionId.slice(0, 8)}`;
@@ -68,11 +69,21 @@ export function createSessions(api) {
     return null;
   }
 
+  // Firefox ignores focused: false and focuses the new window, so the user's window gets focus back.
+  // Windows open one at a time, so no session mistakes another session's new window for the user's.
+  function openWindow() {
+    const opened = opening.then(async () => {
+      const previous = await api.windows.getLastFocused().catch(() => null);
+      const win = await api.windows.create({ url: "about:blank", focused: false });
+      if (previous?.focused) await api.windows.update(previous.id, { focused: true }).catch(() => {});
+      return win;
+    });
+    opening = opened.catch(() => {});
+    return opened;
+  }
+
   async function create(sessionId) {
-    const previous = await api.windows.getLastFocused().catch(() => null);
-    const win = await api.windows.create({ url: "about:blank", focused: false });
-    // Firefox ignores focused: false and focuses the new window, so the user's window gets focus back.
-    if (previous?.focused) await api.windows.update(previous.id, { focused: true }).catch(() => {});
+    const win = await openWindow();
     const rec = newRecord(sessionId);
     rec.main = win.id;
     rec.windows.add(win.id);

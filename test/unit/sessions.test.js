@@ -113,6 +113,35 @@ test("creating a session gives focus back to the Firefox window the user was in,
   }
 });
 
+test("sessions created in parallel leave focus on the user's window", async () => {
+  const { api, windows, addWindow } = fakeApi();
+  const user = addWindow({ focused: true });
+  const focus = (id) => { for (const w of windows.values()) w.focused = w.id === id; };
+  let release;
+  const focusApplied = new Promise((resolve) => { release = resolve; });
+  const { create, update } = api.windows;
+  // Firefox focuses every new window, and a requested focus change lands later.
+  api.windows.create = async (props) => {
+    const win = await create(props);
+    focus(win.id);
+    return win;
+  };
+  api.windows.update = async (id, { focused, ...props }) => {
+    if (focused) await focusApplied.then(() => focus(id));
+    return update(id, props);
+  };
+  const ticks = async (n) => { for (let i = 0; i < n; i++) await new Promise((resolve) => setImmediate(resolve)); };
+  const sessions = createSessions(api);
+  const first = sessions.context(ID, { createIfEmpty: true });
+  while (windows.size < 2) await ticks(1);
+  const second = sessions.context("efgh5678-0000-4000-8000-000000000000", { createIfEmpty: true });
+  await ticks(10);
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.notEqual(a.windowId, b.windowId);
+  assert.deepEqual([...windows.values()].filter((w) => w.focused).map((w) => w.id), [user]);
+});
+
 test("concurrent createIfEmpty calls open only one window", async () => {
   const { api, windows } = fakeApi();
   const sessions = createSessions(api);
