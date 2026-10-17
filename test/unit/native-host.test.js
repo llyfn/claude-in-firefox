@@ -32,6 +32,13 @@ async function startHost() {
   return { input, socketPath, host, fromHost: messageQueue(output) };
 }
 
+const connectError = (address) =>
+  new Promise((resolve) => {
+    const probe = net.connect(address);
+    probe.once("connect", () => { probe.destroy(); resolve(null); });
+    probe.once("error", (err) => resolve(err.code));
+  });
+
 async function connectClient(socketPath) {
   const socket = net.connect(socketPath);
   await new Promise((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
@@ -123,11 +130,15 @@ test("a second host refuses to start while the first is serving", async (t) => {
   await assert.rejects(startNativeHost({ input: new PassThrough(), output: new PassThrough(), address: h.socketPath }), /already serving/);
 });
 
-test("Firefox closing stdin removes the socket", async () => {
+test("Firefox closing stdin stops the host accepting connections and removes the Unix socket file", async () => {
   const h = await startHost();
+  assert.equal(await connectError(h.socketPath), null);
   h.input.end();
-  await sleep(20);
-  assert.equal(fs.existsSync(h.socketPath), false);
+  const deadline = Date.now() + 2000;
+  let code;
+  while (!(code = await connectError(h.socketPath)) && Date.now() < deadline) await sleep(10);
+  assert.match(String(code), /^(ENOENT|ECONNREFUSED)$/);
+  if (process.platform !== "win32") assert.equal(fs.existsSync(h.socketPath), false);
 });
 
 test("with the Windows transport the host skips directory checks and reports a busy address", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async (t) => {
