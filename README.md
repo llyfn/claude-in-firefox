@@ -45,7 +45,7 @@ To update, install the `.xpi` from the newer release (the add-on does not update
 
 ## Safety
 
-- **Stop button.** Every page in a session window shows a "Claude is using this window · Stop" bar. Stop cancels the running call and makes every later call fail until you press Resume. Only a real click works; Claude's synthetic input cannot press it.
+- **Stop button.** Every page in a session window shows a "Claude is using this window · Stop" bar. Stop cancels the running call and makes every later call fail until you press Resume. Only a real click works; Claude's synthetic input cannot press it. Pages the add-on cannot reach (`about:` pages including the blank tab of a new session window, other extensions' pages, restricted domains, PDFs) show no bar; there, closing the session's window ends the session, and Claude has to open a new window to continue.
 - **Dialogs are answered automatically in session tabs.** alert() is dismissed, confirm() answers OK, prompt() returns its default text, and "Leave page?" prompts are suppressed; Claude sees each dialog and the answer. While a session is stopped, dialogs appear normally.
 - **No domain blocking.** Unlike Claude in Chrome, this extension blocks no sites and shows no per-site permission prompts. Claude Code's own permission settings are the only gate.
 - **Firefox's own restrictions still apply.** Firefox keeps every extension off its privileged pages (`about:*`, other extensions' pages) and off the domains listed in the `extensions.webextensions.restrictedDomains` pref, such as addons.mozilla.org. To allow those domains, clear that pref and set `privacy.resistFingerprinting.block_mozAddonManager` to `true` in `about:config`. The installer never changes Firefox prefs.
@@ -80,9 +80,9 @@ To run an unsigned build, open `about:config` in Firefox Developer Edition, set 
 
 Development and tests need Node ≥ 22.22. E2E needs Firefox Developer Edition and a prior `npm run install-host`. Do not run it while another Firefox instance has the add-on installed: only one native host can own the bridge socket.
 
-E2E uses `FIREFOX_BIN` if set, otherwise `/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox`; on Linux set `FIREFOX_BIN` to your Firefox Developer Edition binary.
+E2E uses `FIREFOX_BIN` if set, otherwise `/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox`; on Linux set `FIREFOX_BIN` to your Firefox Developer Edition binary. It also connects to Firefox over WebDriver BiDi on a free local port to press the Stop bar with real clicks.
 
-Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`.
+Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`; sessions, Stop and dialogs: `docs/superpowers/specs/2026-10-17-session-control-design.md`.
 
 ## Releasing
 

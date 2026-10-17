@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { STOPPED_MESSAGE } from "../../extension/background/control.js";
 import { imagesOf, startHarness, textOf } from "./harness.js";
 
 let h;
@@ -388,6 +389,9 @@ describe("session window", () => {
   });
 
   test("Claude's click at the Stop pill's position reaches the page beneath", async () => {
+    const probe = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query: "Probe pill button" })))[1];
+    await h.call("computer", { tabId, action: "left_click", ref: probe });
+    await eventually(async () => assert.match(await log(), /at the pill: claude-firefox-indicator/));
     const shot = textOf(await h.call("computer", { tabId, action: "screenshot" }));
     const [, w, hgt] = /Screenshot (\d+)x(\d+)/.exec(shot).map(Number);
     await h.call("computer", { tabId, action: "left_click", coordinate: [Math.round(w / 2), hgt - 20] });
@@ -422,5 +426,57 @@ describe("session window", () => {
     assert.match(textOf(await h.call("computer", { tabId, action: "left_click", ref: pushRef })), /→ URL changed to http:\/\/127\.0\.0\.1:\d+\/session\.html\?pushed/);
     const goRef = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query: "Go to basic button" })))[1];
     assert.match(textOf(await h.call("computer", { tabId, action: "left_click", ref: goRef })), /→ Navigated to http:\/\/127\.0\.0\.1:\d+\/basic\.html\?? — "Basic page"/);
+  });
+});
+
+describe("trusted input through WebDriver BiDi", () => {
+  test("a real click on Stop rejects a running wait and Resume lets calls through", async () => {
+    const tabId = await openTab("/session.html?real-click");
+    const context = await h.bidi.contextOf("/session.html?real-click");
+    const pillButton = (label) => eventually(async () => {
+      const button = await h.bidi.locate(context, "button", await h.bidi.shadowRootOf(context, "claude-firefox-indicator"));
+      const [x, y, text] = await h.bidi.centerOf(context, button);
+      assert.equal(text, label);
+      assert.ok(x > 0 && y > 0, "the pill is not showing");
+      return [x, y];
+    });
+
+    const stop = await pillButton("Stop");
+    const waiting = h.call("computer", { tabId, action: "wait", duration: 30 });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const pressed = Date.now();
+    await h.bidi.click(context, ...stop);
+    const stopped = await waiting;
+    assert.equal(stopped.isError, true);
+    assert.ok(textOf(stopped).startsWith(STOPPED_MESSAGE), textOf(stopped));
+    assert.ok(Date.now() - pressed < 5000, `the wait ended ${Date.now() - pressed} ms after Stop`);
+    const refused = await h.call("computer", { tabId, action: "screenshot" });
+    assert.equal(refused.isError, true);
+    assert.ok(textOf(refused).startsWith(STOPPED_MESSAGE), textOf(refused));
+
+    await h.bidi.click(context, ...(await pillButton("Resume")));
+    await eventually(async () => {
+      const resumed = await h.call("computer", { tabId, action: "screenshot" });
+      assert.equal(resumed.isError, false, textOf(resumed));
+    });
+    await pillButton("Stop");
+  });
+
+  test("dialogs in a window outside the session stay native", async () => {
+    await h.bidi.send("session.subscribe", { events: ["browsingContext.userPromptOpened"] });
+    const { context } = await h.bidi.send("browsingContext.create", { type: "window" });
+    try {
+      await h.bidi.send("browsingContext.navigate", { context, url: `${h.fixtures.a}/dialog.html`, wait: "complete" });
+      const [x, y] = await h.bidi.centerOf(context, await h.bidi.locate(context, "#ask"));
+      const opened = h.bidi.nextEvent("browsingContext.userPromptOpened", (prompt) => prompt.context === context);
+      const clicking = h.bidi.click(context, x, y);
+      const prompt = await opened;
+      assert.deepEqual([prompt.type, prompt.message], ["confirm", "Native?"]);
+      await h.bidi.send("browsingContext.handleUserPrompt", { context, accept: false });
+      await clicking;
+      assert.equal(await h.bidi.evaluate(context, "document.title"), "confirm returned false");
+    } finally {
+      await h.bidi.send("browsingContext.close", { context }).catch(() => {});
+    }
   });
 });
