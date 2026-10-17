@@ -42,22 +42,6 @@ export function bridgeAddress({ platform = process.platform, appDir = appDirFor(
   return name;
 }
 
-export function installLocations(homeDir = os.homedir(), platform = process.platform) {
-  if (platform === "darwin") {
-    return {
-      manifestDir: path.join(homeDir, "Library/Application Support/Mozilla/NativeMessagingHosts"),
-      hostDir: path.join(homeDir, "Library/Application Support/claude-in-firefox/host"),
-    };
-  }
-  if (platform === "linux") {
-    return {
-      manifestDir: path.join(homeDir, ".mozilla/native-messaging-hosts"),
-      hostDir: path.join(homeDir, ".local/share/claude-in-firefox/host"),
-    };
-  }
-  throw new Error(`Unsupported platform "${platform}": the installer supports macOS and Linux.`);
-}
-
 export async function ensureSocketDir(dir) {
   await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
   const st = await fsp.lstat(dir);
