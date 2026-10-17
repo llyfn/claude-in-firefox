@@ -83,7 +83,7 @@ Unless `--no-claude`, when `claude` is on PATH: `claude mcp remove --scope user 
   - `unit`: matrix ubuntu-latest, macos-latest, windows-latest, Node 24: `npm ci`, `npm test`; `npm run lint` on Ubuntu only.
   - `e2e`: matrix ubuntu-latest (under `xvfb-run`) and windows-latest: download Firefox Developer Edition from Mozilla (Linux tarball; Windows installer run silently), `npm ci`, `npm run install-host -- --no-claude`, `npm run e2e` with `FIREFOX_BIN` set.
 - E2E harness: probe `bridgeAddress()` instead of `SOCKET_PATH`, and default `FIREFOX_BIN` per platform.
-- `release.yml`: the tag must match both `extension/manifest.json` and `package.json`; after tests, lint and AMO signing, `npm publish --access public` with `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` (setup-node `registry-url: https://registry.npmjs.org`), then the GitHub release.
+- `release.yml`: the tag must match both `extension/manifest.json` and `package.json`; after tests, lint, an `npm whoami` check of the token and AMO signing, `npm publish --access public` with `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` (setup-node `registry-url: https://registry.npmjs.org`), then the GitHub release.
 
 ## 7. Docs
 

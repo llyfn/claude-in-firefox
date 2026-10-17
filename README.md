@@ -118,11 +118,11 @@ For each release:
 
 1. Bump `version` in both `extension/manifest.json` and `package.json`. addons.mozilla.org refuses to sign a version it has already signed.
 2. Commit, then push a matching tag: `git tag v0.1.0 && git push origin v0.1.0`.
-3. The workflow checks that the tag matches both versions, runs the unit tests and lint, signs the add-on, publishes `@llyfn/claude-in-firefox` to npm, and creates the GitHub release with the signed `.xpi`.
+3. The workflow checks that the tag matches both versions, runs the unit tests and lint, checks the npm token, signs the add-on, publishes `@llyfn/claude-in-firefox` to npm, and creates the GitHub release with the signed `.xpi`.
 
 ## Troubleshooting
 
-- **"Firefox extension not connected", or on Windows "could not prove that it holds the key in pipe-key".** Firefox isn't running, the add-on isn't installed, or `npx @llyfn/claude-in-firefox install` wasn't run. On Windows, `pipe-name` and `pipe-key` must exist in the app directory, and the second message means another program may be serving the bridge's pipe name. The Browser Console (⌘⇧J, or Ctrl+Shift+J on Windows and Linux) shows native host errors prefixed `claude-firefox native host:`.
+- **"Firefox extension not connected", or on Windows "could not prove that it holds the key in pipe-key".** Firefox isn't running, the add-on isn't installed, or `npx @llyfn/claude-in-firefox install` wasn't run. On Windows, `pipe-name` and `pipe-key` must exist in the app directory, and for the second message, restart Firefox first: a native host started before install last ran, or one that is shutting down, also gets it. If it persists, another program may be serving the bridge's pipe name. The Browser Console (⌘⇧J, or Ctrl+Shift+J on Windows and Linux) shows native host errors prefixed `claude-firefox native host:`.
 - **Native host or MCP server stops starting after a Node upgrade.** The installer records the first `node` on `PATH`. After changing Node installations, re-run `npx @llyfn/claude-in-firefox install`, which rewrites the wrapper and the Claude Code entry with the current node.
 - **"Cannot access this page".** The page is one Firefox reserves (see Safety).
 - **Clicks land in the wrong place.** Take a fresh `screenshot` first: coordinates always refer to the most recent screenshot of that tab.
