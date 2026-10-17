@@ -12,7 +12,7 @@ export async function tabShowing(api, tabId, url) {
   return tab;
 }
 
-// Resolves to [frames, navigating]: the page's frames, and those expected to leave the initial about:blank. Frames without a src stay blank, and lazy ones load only when scrolled into view.
+// Evaluates to [frames, navigating]: the page's frames, and those expected to leave the initial about:blank. Frames without a src stay blank, and lazy ones load only when scrolled into view.
 const COUNT_FRAMES = `(() => {
   const frames = [...document.querySelectorAll("iframe, frame")];
   const navigating = frames.filter((f) => f.getAttribute("loading")?.toLowerCase() !== "lazy" && (f.hasAttribute("srcdoc") || !/^\\s*(about:blank)?\\s*$/i.test(f.getAttribute("src") ?? "")));
