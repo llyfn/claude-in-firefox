@@ -40,6 +40,8 @@
     pillLabel = document.createElement("span");
     pillButton = document.createElement("button");
     pillButton.type = "button";
+    pillButton.tabIndex = -1;
+    pillButton.addEventListener("mousedown", (event) => event.preventDefault());
     pillButton.style.cssText = `all: unset; cursor: pointer; padding: 4px 12px; border-radius: 999px; background: rgb(${ACCENT}); color: #fff; font: 600 13px/1.2 system-ui, sans-serif;`;
     // Only the user can press this: Claude's input is synthetic and never trusted.
     pillButton.addEventListener("click", (event) => {
@@ -86,6 +88,7 @@
     },
     session({ state }) {
       session = state === "active" || state === "stopped" ? state : null;
+      if (!session && !host) return {};
       render();
       return {};
     },
@@ -94,4 +97,8 @@
       cursor.style.transform = `translate(${x - 3}px, ${y - 2}px)`;
     },
   };
+
+  globalThis.browser?.runtime?.sendMessage({ type: "indicator.query" }).then((reply) => {
+    if (reply && "state" in reply) cf.indicator.session({ state: reply.state });
+  }, () => {});
 })();

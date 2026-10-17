@@ -10,7 +10,7 @@ function setup(tools, ownedTab = async (_sessionId, tabId) => ({ id: tabId, url:
   const activated = [];
   const activity = { start: (id) => events.push(["start", id]), end: (id) => events.push(["end", id]) };
   const sessions = { ownedTab, activate: async (tab) => activated.push(tab.id), tabChanges: async () => changes, close: async (id) => closed.push(id) };
-  return { dispatch: createDispatcher({ tools, sessions, activity, control: { run: (_id, fn) => fn(new AbortController().signal) }, send: (m) => sent.push(m) }), sent, closed, events, activated };
+  return { dispatch: createDispatcher({ tools, sessions, activity, control: { run: (_id, fn) => fn(new AbortController().signal), close: async (id) => closed.push(id) }, send: (m) => sent.push(m) }), sent, closed, events, activated };
 }
 const call = (tool, args = {}, id = "1:1") => ({ type: "call", id, sessionId: "s", tool, args });
 
@@ -77,7 +77,7 @@ test("calls on one tab run one at a time while other tabs proceed", async () => 
   assert.ok(log.indexOf("end 1") < log.indexOf("start 2"));
 });
 
-test("session_closed forgets the session and sends nothing", async () => {
+test("session_closed is handed to control and sends nothing", async () => {
   const { dispatch, sent, closed } = setup({});
   await dispatch({ type: "session_closed", sessionId: "gone" });
   assert.deepEqual(closed, ["gone"]);
@@ -114,7 +114,7 @@ test("Stop rejects the running and queued calls of the session with one result e
   };
   const control = createControl({ sessions, idleAfterMs: 5 });
   const ran = [];
-  const tools = { slow: { tabScoped: true, run: ({ args }) => { ran.push(args.n); return new Promise(() => {}); } } };
+  const tools = { slow: { tabScoped: true, run: ({ args, signal }) => { ran.push(args.n); return new Promise((resolve) => signal.addEventListener("abort", () => resolve("late"), { once: true })); } } };
   const sent = [];
   const dispatch = createDispatcher({ tools, sessions, activity: { start() {}, end() {} }, control, send: (m) => sent.push(m) });
   const first = dispatch(call("slow", { tabId: 1, n: 1 }, "1:1"));

@@ -1,10 +1,11 @@
 export const STOPPED_MESSAGE = "The user pressed Stop in Firefox. Stop using the browser and ask the user how to continue. Browser calls fail until they press Resume.";
 export const IDLE_AFTER_MS = 20_000;
 
-export function createControl({ sessions, onChange = async () => {}, idleAfterMs = IDLE_AFTER_MS }) {
+export function createControl({ sessions, onChange = async () => {}, onClosed = async () => {}, idleAfterMs = IDLE_AFTER_MS }) {
   const controllers = new Map();
   const running = new Map();
   const idleTimers = new Map();
+  const stopped = new Set();
 
   function controllerOf(sessionId) {
     let controller = controllers.get(sessionId);
@@ -35,7 +36,7 @@ export function createControl({ sessions, onChange = async () => {}, idleAfterMs
   return {
     // The call's own work may continue after Stop, but its result is never delivered.
     async run(sessionId, fn) {
-      if (await sessions.isStopped(sessionId)) throw new Error(STOPPED_MESSAGE);
+      if (stopped.has(sessionId) || await sessions.isStopped(sessionId)) throw new Error(STOPPED_MESSAGE);
       const { signal } = controllerOf(sessionId);
       begin(sessionId);
       try {
@@ -53,15 +54,29 @@ export function createControl({ sessions, onChange = async () => {}, idleAfterMs
     },
 
     async stop(sessionId) {
-      await sessions.setStopped(sessionId, true);
+      stopped.add(sessionId);
       controllers.get(sessionId)?.abort();
       controllers.delete(sessionId);
+      await sessions.setStopped(sessionId, true);
       await onChange(sessionId);
     },
 
     async resume(sessionId) {
+      stopped.delete(sessionId);
       await sessions.setStopped(sessionId, false);
       await onChange(sessionId);
+    },
+
+    async close(sessionId) {
+      const tabs = await sessions.sessionTabs(sessionId);
+      await sessions.close(sessionId);
+      controllers.get(sessionId)?.abort();
+      controllers.delete(sessionId);
+      clearTimeout(idleTimers.get(sessionId));
+      idleTimers.delete(sessionId);
+      running.delete(sessionId);
+      stopped.delete(sessionId);
+      await onClosed(tabs);
     },
   };
 }

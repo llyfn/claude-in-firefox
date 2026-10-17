@@ -18,7 +18,7 @@ const sessions = createSessions(api);
 const activity = createActivity({ api, content });
 const capture = createCapture({ api, content });
 const presence = createPresence({ api, content, sessions });
-const control = createControl({ sessions, onChange: (sessionId) => presence.refreshSession(sessionId) });
+const control = createControl({ sessions, onChange: (sessionId) => presence.refreshSession(sessionId), onClosed: (tabs) => presence.refreshTabs(tabs) });
 const store = createLogStore();
 installLogListeners(api, store);
 presence.install();
@@ -28,6 +28,7 @@ api.tabs.onCreated.addListener((tab) => {
 });
 api.windows.onRemoved.addListener((windowId) => sessions.windowRemoved(windowId));
 api.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type === "indicator.query" && sender.tab) return presence.stateFor(sender.tab).then((state) => ({ state }));
   if (msg?.type !== "control" || !sender.tab) return undefined;
   sessions.sessionOfTab(sender.tab).then((sessionId) => {
     if (!sessionId) return undefined;

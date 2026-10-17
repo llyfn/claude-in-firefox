@@ -16,10 +16,20 @@ export function createPresence({ api, content, sessions }) {
     await content.call(tab.id, 0, "indicator.session", { state }).catch(() => {});
   }
 
+  async function refreshTabs(tabs) {
+    await Promise.all(tabs.map((tab) => refreshTab(tab).catch(() => {})));
+  }
+
   return {
     refreshTab,
+    refreshTabs,
+    async stateFor(tab) {
+      const state = await stateOf(tab);
+      if (state) marked.add(tab.id);
+      return state;
+    },
     async refreshSession(sessionId) {
-      for (const tab of await sessions.sessionTabs(sessionId)) await refreshTab(tab);
+      await refreshTabs(await sessions.sessionTabs(sessionId));
     },
     install() {
       api.tabs.onUpdated.addListener((tabId, info, tab) => {

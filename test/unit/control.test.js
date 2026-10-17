@@ -49,3 +49,28 @@ test("a stopped session refuses calls until Resume, and other sessions are unaff
   assert.equal(await control.run("s", async (signal) => { seen = signal; return "again"; }), "again");
   assert.equal(seen.aborted, false);
 });
+
+test("Stop takes effect before the slow persist finishes", async () => {
+  const { sessions } = fakeSessions();
+  const persisted = sessions.setStopped;
+  sessions.setStopped = async (id, value) => { await sleep(30); return persisted(id, value); };
+  const control = createControl({ sessions, idleAfterMs: 5 });
+  const stopping = control.stop("s");
+  await assert.rejects(control.run("s", async () => "no"), { message: STOPPED_MESSAGE });
+  await stopping;
+});
+
+test("close collects the tabs first, closes the session, aborts running calls and reports the tabs", async () => {
+  const { sessions } = fakeSessions();
+  const order = [];
+  sessions.sessionTabs = async () => { order.push("tabs"); return [{ id: 1 }]; };
+  sessions.close = async () => { order.push("close"); };
+  let reported;
+  const control = createControl({ sessions, onClosed: async (tabs) => { reported = tabs; }, idleAfterMs: 5 });
+  const running = control.run("s", () => new Promise(() => {}));
+  await tick();
+  await control.close("s");
+  await assert.rejects(running, { message: STOPPED_MESSAGE });
+  assert.deepEqual(order, ["tabs", "close"]);
+  assert.deepEqual(reported, [{ id: 1 }]);
+});

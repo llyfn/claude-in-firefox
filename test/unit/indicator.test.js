@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadContent } from "./helpers/dom.js";
+import { readFileSync } from "node:fs";
+import { loadContent, plain } from "./helpers/dom.js";
 
 function setup() {
   const w = loadContent("<p>Page</p>", ["indicator.js"]);
@@ -51,4 +52,21 @@ test("screenshots hide the pill and a host left by an earlier injection is repla
   assert.equal(hosts[0].style.display, "none");
   indicator.resume();
   assert.equal(hosts[0].style.display, "block");
+});
+
+test("a state of null on a fresh page builds no host", () => {
+  const { w, indicator } = setup();
+  indicator.session({ state: null });
+  assert.equal(w.document.querySelector("claude-firefox-indicator"), null);
+});
+
+test("the state answered to the injection query shows the pill", async () => {
+  const w = loadContent("<p>Page</p>", []);
+  w.matchMedia = () => ({ matches: true });
+  const sent = [];
+  w.browser = { runtime: { sendMessage: (message) => { sent.push(message); return Promise.resolve({ state: "stopped" }); } } };
+  w.eval(readFileSync(new URL("../../extension/content/indicator.js", import.meta.url), "utf8"));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(plain(sent), [{ type: "indicator.query" }]);
+  assert.equal(w.document.querySelector("claude-firefox-indicator").style.display, "block");
 });

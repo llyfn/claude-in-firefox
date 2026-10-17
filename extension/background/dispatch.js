@@ -41,7 +41,7 @@ export function createDispatcher({ tools, sessions, activity, control, send }) {
 
   return async function dispatch(msg) {
     if (msg.type === "session_closed") {
-      await sessions.close(msg.sessionId);
+      await control.close(msg.sessionId);
       return;
     }
     if (msg.type !== "call") return;

@@ -33,3 +33,20 @@ test("a stopped session shows Resume in every tab, and a tab that left the sessi
   await presence.refreshTab({ id: 2 });
   assert.deepEqual(calls.slice(2), [[2, "indicator.session", null]]);
 });
+
+test("stateFor reports the state and marks the tab so a later departure clears it", async () => {
+  const { presence, calls, membership } = setup();
+  assert.equal(await presence.stateFor({ id: 1 }), "active");
+  assert.equal(await presence.stateFor({ id: 9 }), null);
+  membership.delete(1);
+  await presence.refreshTab({ id: 1 });
+  await presence.refreshTab({ id: 9 });
+  assert.deepEqual(calls, [[1, "indicator.session", null]]);
+});
+
+test("refreshTabs continues past a tab that fails", async () => {
+  const { presence, calls, membership } = setup();
+  membership.get = (id) => { if (id === 9) throw new Error("boom"); return Map.prototype.get.call(membership, id); };
+  await presence.refreshTabs([{ id: 9 }, { id: 1 }, { id: 2 }]);
+  assert.deepEqual(calls, [[1, "indicator.session", "active"], [2, "indicator.session", "active"]]);
+});
