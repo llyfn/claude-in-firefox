@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import fsp from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
@@ -6,31 +6,43 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { coerceArgs } from "./coerce.js";
-import { encode, onMessages } from "./framing.js";
-import { PACKAGE_VERSION, bridgeAddress, isMain, verifySocketDir } from "./paths.js";
+import { bridgeProof, encode, onMessages } from "./framing.js";
+import { PACKAGE_VERSION, bridgeAddress, bridgeKey, isMain, verifySocketDir } from "./paths.js";
 import { TOOLS, TOOL_BY_NAME } from "./tools.js";
 
 export const CALL_TIMEOUT_MS = 30_000;
 export const BATCH_TIMEOUT_MS = 90_000;
+export const HANDSHAKE_TIMEOUT_MS = 5_000;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 export const NOT_CONNECTED_MESSAGE = "Firefox extension not connected — is Firefox running with the Claude Code Bridge for Firefox add-on installed, and has `npx @llyfn/claude-in-firefox install` been run?";
+const UNVERIFIED_HOST_MESSAGE = "The process serving the bridge pipe could not prove that it holds the key in pipe-key, so another program may be using the pipe name.";
 
 const MIME_TYPES = {
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
   ".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".json": "application/json", ".html": "text/html", ".zip": "application/zip",
 };
 
+function provesKey(proof, key, nonce) {
+  const expected = Buffer.from(bridgeProof(key, nonce));
+  const actual = Buffer.from(typeof proof === "string" ? proof : "");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 export class BridgeClient {
   #address;
+  #key;
   #platform;
+  #handshakeTimeoutMs;
   #socket = null;
   #connecting = null;
   #pending = new Map();
   #nextId = 1;
 
-  constructor({ address, sessionId, platform = process.platform }) {
+  constructor({ address, key = null, sessionId, platform = process.platform, handshakeTimeoutMs = HANDSHAKE_TIMEOUT_MS }) {
     this.#address = typeof address === "function" ? address : () => address;
+    this.#key = typeof key === "function" ? key : () => key;
     this.#platform = platform;
+    this.#handshakeTimeoutMs = handshakeTimeoutMs;
     this.sessionId = sessionId;
   }
 
@@ -62,8 +74,10 @@ export class BridgeClient {
 
   async #open() {
     let address;
+    let key;
     try {
       address = this.#address();
+      key = this.#key();
     } catch (err) {
       throw new Error(`${NOT_CONNECTED_MESSAGE} (${err.message})`);
     }
@@ -80,19 +94,33 @@ export class BridgeClient {
       socket.once("error", () => reject(new Error(NOT_CONNECTED_MESSAGE)));
     });
     socket.on("error", () => {});
+    let welcome;
+    const welcomed = new Promise((resolve) => { welcome = resolve; });
     socket.on("close", () => {
+      welcome(null);
       if (this.#socket === socket) this.#socket = null;
       for (const pending of this.#pending.values()) pending.reject(new Error("Connection to Firefox lost"));
       this.#pending.clear();
     });
     onMessages(socket, (msg) => {
+      if (msg.type === "welcome") welcome(msg);
       if (msg.type !== "result") return;
       const pending = this.#pending.get(msg.id);
       if (!pending) return;
       this.#pending.delete(msg.id);
       pending.resolve({ content: msg.content, isError: !!msg.isError });
     });
-    socket.write(encode({ type: "hello", sessionId: this.sessionId }));
+    const nonce = key ? randomBytes(32).toString("hex") : undefined;
+    socket.write(encode({ type: "hello", sessionId: this.sessionId, nonce }));
+    if (key) {
+      const timer = setTimeout(() => welcome(null), this.#handshakeTimeoutMs);
+      const reply = await welcomed;
+      clearTimeout(timer);
+      if (!provesKey(reply?.proof, key, nonce)) {
+        socket.destroy();
+        throw new Error(UNVERIFIED_HOST_MESSAGE);
+      }
+    }
     this.#socket = socket;
     return socket;
   }
@@ -166,7 +194,7 @@ export function createMcpServer({ bridge }) {
 }
 
 export async function runMcpServer() {
-  const bridge = new BridgeClient({ address: () => bridgeAddress(), sessionId: randomUUID() });
+  const bridge = new BridgeClient({ address: () => bridgeAddress(), key: () => bridgeKey(), sessionId: randomUUID() });
   await createMcpServer({ bridge }).connect(new StdioServerTransport());
   process.stdin.on("end", () => process.exit(0));
 }
