@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { framesSettled, withScheme } from "../../extension/background/tools/tabs.js";
+import { withScheme } from "../../extension/background/tools/tabs.js";
+import { framesSettled } from "../../extension/background/navigation.js";
 
 const top = { frameId: 0, parentFrameId: -1 };
 const child = { frameId: 7, parentFrameId: 0 };

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { computerTool } from "../../extension/background/tools/computer.js";
 
-function setup(replies = {}) {
+function setup(replies = {}, { suffix = "" } = {}) {
   const calls = [];
   const created = [];
   const grouped = [];
@@ -26,9 +26,15 @@ function setup(replies = {}) {
     screenshot: async () => ({ base64: "AAAA", mimeType: "image/jpeg", width: 640, height: 400, frame: { width: 640, height: 400 } }),
     zoom: async () => ({ base64: "BBBB", mimeType: "image/png", width: 300, height: 200 }),
   };
-  const { computer } = computerTool({ api, content, capture });
+  const watched = [];
+  const watch = (_api, tabId) => {
+    const watcher = { tabId, stopped: false, settle: async () => suffix, stop() { watcher.stopped = true; } };
+    watched.push(watcher);
+    return watcher;
+  };
+  const { computer } = computerTool({ api, content, capture, watch });
   const tab = { id: 1, url: "https://a.test/", windowId: 3, groupId: 9 };
-  return { run: (args) => computer.run({ tab, args }), calls, created, grouped };
+  return { run: (args, signal) => computer.run({ tab, args, signal }), calls, created, grouped, watched };
 }
 
 test("coordinate clicks map to CSS pixels, accept numeric strings and carry the host guard", async () => {
@@ -80,4 +86,31 @@ test("screenshot, scroll and zoom return image blocks and bad input is rejected"
   await assert.rejects(run({ action: "scroll", coordinate: [1, 1], scroll_direction: "sideways" }), /scroll_direction must be/);
   await assert.rejects(run({ action: "wait", duration: 31 }), /between 0 and 30/);
   await assert.rejects(run({ action: "teleport" }), /unknown action "teleport"/);
+});
+
+test("clicks, typing and keys report the navigation they started", async () => {
+  const { run, watched } = setup({}, { suffix: '→ Navigated to https://b.test/ — "B"' });
+  assert.equal(await run({ action: "left_click", coordinate: [1, 1] }), 'Clicked at (1, 1) → Navigated to https://b.test/ — "B"');
+  assert.equal(await run({ action: "type", text: "hi" }), 'Typed "hi" → Navigated to https://b.test/ — "B"');
+  assert.equal(await run({ action: "key", text: "Enter" }), 'Pressed Enter → Navigated to https://b.test/ — "B"');
+  assert.equal(watched.length, 3);
+  await run({ action: "screenshot" });
+  await run({ action: "hover", coordinate: [1, 1] });
+  assert.equal(watched.length, 3);
+});
+
+test("a failed action stops watching for navigations", async () => {
+  const { run, watched } = setup({ "0:input.click": () => { throw new Error("No element at (1, 1)."); } });
+  await assert.rejects(run({ action: "left_click", coordinate: [1, 1] }), /No element/);
+  assert.equal(watched[0].stopped, true);
+});
+
+test("an aborted wait returns early", async () => {
+  const { run } = setup();
+  const controller = new AbortController();
+  const started = Date.now();
+  const waiting = run({ action: "wait", duration: 30 }, controller.signal);
+  controller.abort();
+  await waiting;
+  assert.ok(Date.now() - started < 1000);
 });
