@@ -1,0 +1,2 @@
+# The file_upload e2e test asserts this file's exact size.
+test/e2e/pages/upload-sample.txt -text
