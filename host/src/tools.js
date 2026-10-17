@@ -1,20 +1,20 @@
-const tabId = { type: "integer", description: "ID of a tab in this session's tab group (see tabs_context)." };
+const tabId = { type: "integer", description: "ID of a tab in this session's Firefox window (see tabs_context)." };
 const point = (description) => ({ type: "array", items: { type: "number" }, minItems: 2, maxItems: 2, description });
 
 export const TOOLS = [
   {
     name: "tabs_context",
-    description: "List the tabs in this session's Firefox tab group. Call this first in every conversation to learn which tab IDs you may use. Each Claude Code session gets its own group, and tabs outside it cannot be controlled. Pass createIfEmpty: true to create the group (with one blank tab) when this session has none yet.",
-    inputSchema: { type: "object", properties: { createIfEmpty: { type: "boolean", description: "Create the tab group with a blank tab if this session has none yet." } } },
+    description: "List the tabs in this session's Firefox window. Call this first in every conversation to learn which tab IDs you may use. Each Claude Code session gets its own window, and tabs outside it cannot be controlled. Pass createIfEmpty: true to open the window (with one blank tab) when this session has none yet. Later results end with a \"Tabs changed\" line when tabs open or close in the window.",
+    inputSchema: { type: "object", properties: { createIfEmpty: { type: "boolean", description: "Open the session's window with a blank tab if this session has none yet." } } },
   },
   {
     name: "tabs_create",
-    description: "Open a new blank tab in this session's tab group and return its tab ID. Prefer a fresh tab per task over reusing tabs the user is looking at.",
+    description: "Open a new blank tab in this session's window and return its tab ID.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "tabs_close",
-    description: "Close a tab in this session's tab group.",
+    description: "Close a tab in this session's window.",
     inputSchema: { type: "object", properties: { tabId }, required: ["tabId"] },
   },
   {
@@ -29,6 +29,8 @@ export const TOOLS = [
       "* Take a screenshot before clicking by coordinate; coordinates are pixels in the most recent screenshot of that tab.",
       "* Prefer ref targets from read_page or find over coordinates when you have them.",
       "* Click the center of elements.",
+      "* Clicks, type and key wait up to 0.5 s for a navigation to start and then up to 10 s for it to finish, and report where the page went.",
+      "* In this session's tabs, alert() is dismissed, confirm() answers OK and prompt() returns its default text; the result shows each dialog and the answer given.",
       '* key takes space-separated keys or chords, e.g. "Enter", "Tab", "shift+Tab", "cmd+a", "Page_Down". Use "cmd" on macOS.',
     ].join("\n"),
     inputSchema: {
@@ -57,7 +59,7 @@ export const TOOLS = [
         modifiers: { type: "string", description: 'Modifier keys held during a click, joined with "+": ctrl, shift, alt, cmd.' },
         scroll_direction: { type: "string", enum: ["up", "down", "left", "right"] },
         scroll_amount: { type: "integer", minimum: 1, maximum: 10, description: "Scroll wheel ticks of 100 px. Default 3." },
-        duration: { type: "number", minimum: 0, maximum: 10, description: "Seconds to wait (wait action)." },
+        duration: { type: "number", minimum: 0, maximum: 30, description: "Seconds to wait (wait action), up to 30." },
         region: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4, description: "[x0, y0, x1, y1] in screenshot pixels (zoom action)." },
         repeat: { type: "integer", minimum: 1, maximum: 100, description: "Repeat the key sequence this many times (key action). Default 1." },
         scale: { type: "number", minimum: 0.1, maximum: 1, description: "Shrink the returned screenshot or zoom image by this factor to save tokens. Coordinates always refer to the full-size frame reported with the image." },
@@ -68,7 +70,7 @@ export const TOOLS = [
   },
   {
     name: "read_page",
-    description: 'Return an accessibility-tree outline of the page. Each element gets a stable ref (e.g. ref_12) usable with computer, form_input and file_upload. filter "interactive" lists only visible on-screen controls; the default "all" also includes off-screen and hidden content. Output is limited to max_chars (default 50000) and truncated at a line boundary with a note; narrow it with depth or ref_id. Password and payment field values are redacted. Cross-origin iframe contents are included with refs like f7_ref_3.',
+    description: 'Return an accessibility-tree outline of the page. Each element gets a stable ref (e.g. ref_12) usable with computer, form_input and file_upload. filter "interactive" lists only visible on-screen controls; the default "all" also includes off-screen and hidden content. Output is limited to max_chars (default 50000) and truncated at a line boundary with a note; narrow it with depth or ref_id. Password, one-time-code and payment field values are hidden. Lines show states such as (checked), (selected), (expanded), (collapsed), (pressed) and (disabled), and links show absolute URLs. Cross-origin iframe contents are included with refs like f7_ref_3.',
     inputSchema: {
       type: "object",
       properties: {
@@ -88,7 +90,7 @@ export const TOOLS = [
   },
   {
     name: "form_input",
-    description: "Set a form control by ref: text inputs and textareas (string), selects (option value or visible text), checkboxes (boolean), radio buttons (any value selects it), date/number/range inputs, and contenteditable elements. Fires input and change events so frameworks such as React notice the change.",
+    description: "Set a form control by ref: text inputs and textareas (string), selects (option value or visible text), checkboxes (boolean), radio buttons (any value selects it), date/number/range inputs, and contenteditable elements. Fires input and change events so frameworks such as React notice the change. A ref to a wrapper such as a label or field container uses the single control inside it.",
     inputSchema: { type: "object", properties: { ref: { type: "string" }, value: { type: ["string", "boolean", "number"] }, tabId }, required: ["ref", "value", "tabId"] },
   },
   {

@@ -5,6 +5,7 @@
   const MAX_DEPTH = 3;
   const MAX_ITEMS = 100;
   const MAX_QUEUE = 1000;
+  const MAX_STACK_LINES = 10;
   const queue = [];
   let dropped = 0;
   let timer = null;
@@ -35,6 +36,20 @@
       if (descriptor) return "value" in descriptor ? descriptor.value : undefined;
     }
     return undefined;
+  };
+
+  const isError = (value) => typeof value === "object" && value !== null && Object.prototype.toString.call(value) === "[object Error]";
+
+  // Page errors arrive through Xrays, which expose only the native stack accessor, never a page-defined getter.
+  const stackOf = (error) => {
+    let stack;
+    try {
+      stack = error.stack;
+    } catch {
+      return "";
+    }
+    if (typeof stack !== "string" || !stack.trim()) return "";
+    return `\n${stack.trim().split("\n").slice(0, MAX_STACK_LINES).map((line) => `    ${line.trim()}`).join("\n")}`;
   };
 
   // Every node costs at least its own length, so the walk stays within MAX_TEXT characters of work.
@@ -91,7 +106,8 @@
     try {
       if (typeof value === "string") return value;
       if (typeof value === "function") return String(value);
-      return walk(value, 0, new Set(), { left: MAX_TEXT });
+      const text = walk(value, 0, new Set(), { left: MAX_TEXT });
+      return isError(value) ? `${text}${stackOf(value)}` : text;
     } catch {
       try {
         return String(value);
@@ -129,6 +145,6 @@
       }
     }, page.console, { defineAs: level });
   }
-  window.addEventListener("error", (event) => record("exception", `${event.message} (${event.filename}:${event.lineno}:${event.colno})`));
+  window.addEventListener("error", (event) => record("exception", `${event.message} (${event.filename}:${event.lineno}:${event.colno})${isError(event.error) ? stackOf(event.error) : ""}`));
   window.addEventListener("unhandledrejection", (event) => record("exception", `Unhandled promise rejection: ${format(event.reason)}`));
 })();

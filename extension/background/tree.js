@@ -27,6 +27,9 @@ export function renderNode(node) {
   if (node.ref) line += ` [${node.ref}]`;
   if (node.checked) line += " (checked)";
   if (node.selected) line += " (selected)";
+  if (node.expanded === true) line += " (expanded)";
+  if (node.expanded === false) line += " (collapsed)";
+  if (node.pressed) line += " (pressed)";
   if (node.disabled) line += " (disabled)";
   for (const key of ["href", "type", "placeholder", "value"]) if (node[key] != null) line += ` ${key}="${quote(node[key])}"`;
   if (node.frame) line += ` [frame ${node.frame}]`;

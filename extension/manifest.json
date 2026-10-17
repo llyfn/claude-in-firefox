@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Claude Code Bridge for Firefox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lets Claude Code drive this Firefox through a local MCP bridge. Not affiliated with Anthropic.",
   "homepage_url": "https://github.com/llyfn/claude-in-firefox",
   "browser_specific_settings": {
@@ -11,7 +11,7 @@
       "data_collection_permissions": { "required": ["websiteContent", "browsingActivity"] }
     }
   },
-  "permissions": ["nativeMessaging", "tabs", "tabGroups", "<all_urls>", "webRequest", "webNavigation", "clipboardWrite"],
+  "permissions": ["nativeMessaging", "tabs", "tabGroups", "sessions", "<all_urls>", "webRequest", "webNavigation", "clipboardWrite"],
   "background": { "page": "background/background.html", "persistent": true },
   "content_scripts": [
     {
@@ -19,7 +19,7 @@
       "all_frames": true,
       "match_about_blank": true,
       "run_at": "document_start",
-      "js": ["content/console-hook.js", "content/dom.js", "content/tree.js", "content/form.js", "content/text.js", "content/input.js", "content/router.js"]
+      "js": ["content/console-hook.js", "content/dialogs.js", "content/dom.js", "content/tree.js", "content/form.js", "content/text.js", "content/input.js", "content/router.js"]
     },
     {
       "matches": ["<all_urls>"],

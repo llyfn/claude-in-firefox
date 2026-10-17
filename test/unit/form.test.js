@@ -29,14 +29,14 @@ test("selects match by value, exact text or case-insensitive text and list optio
   assert.equal(set(w, "Country", "kr"), 'Selected "Korea" (previous: "United States")');
   set(w, "Country", "united states");
   assert.deepEqual(changes, ["kr", "us"]);
-  assert.throws(() => set(w, "Country", "Japan"), /Option "Japan" not found\. Available options: "United States" \(value: "us"\), "Korea" \(value: "kr"\)/);
+  assert.throws(() => set(w, "Country", "Japan"), /No option matches "Japan"\. Options: "United States" = "us"; "Korea" = "kr"/);
 });
 
 test("checkboxes need booleans and toggle through a click", () => {
   const w = loadContent(`<label><input type="checkbox" id="a"> I agree</label>`, FILES);
   let clicks = 0;
   w.document.getElementById("a").addEventListener("click", () => clicks++);
-  assert.throws(() => set(w, "I agree", "yes"), /Checkbox requires a boolean value/);
+  assert.throws(() => set(w, "I agree", "yes"), /A checkbox needs true or false/);
   assert.equal(set(w, "I agree", true), "Set checkbox to true (previous: false)");
   assert.equal(set(w, "I agree", true), "Set checkbox to true (previous: true)");
   assert.equal(clicks, 1);
@@ -57,15 +57,15 @@ test("radios are selected, number inputs validated, textareas and contenteditabl
 
 test("sensitive values are redacted in the output", () => {
   const w = loadContent(`<label for="p">Password</label><input id="p" type="password" value="old-secret">`, FILES);
-  assert.equal(set(w, "Password", "new-secret"), "Set password value to [redacted] (previous: [redacted])");
+  assert.equal(set(w, "Password", "new-secret"), "Set password value to (hidden) (previous: (hidden))");
   assert.equal(w.document.getElementById("p").value, "new-secret");
 });
 
 test("sensitive selects are redacted in form_input output", () => {
   const w = loadContent(`<label for="m">Expiry month</label><select id="m" autocomplete="cc-exp-month"><option>01</option><option>02</option></select>`, FILES);
-  assert.equal(set(w, "Expiry month", "02"), "Selected [redacted] (previous: [redacted])");
+  assert.equal(set(w, "Expiry month", "02"), "Selected an option (sensitive field; values hidden)");
   assert.equal(w.document.getElementById("m").value, "02");
-  assert.throws(() => set(w, "Expiry month", "13"), (e) => !/01|02/.test(e.message) && /Option not found/.test(e.message));
+  assert.throws(() => set(w, "Expiry month", "13"), (e) => !/01|02/.test(e.message) && /No option matches \(options of a sensitive field are not listed\)/.test(e.message));
 });
 
 test("unsupported elements and file inputs are refused", () => {
@@ -94,4 +94,25 @@ test("page text falls back to the body", () => {
 test("setFiles refuses elements that are not file inputs", () => {
   const w = loadContent(`<label for="n">Name</label><input id="n">`, FILES);
   assert.throws(() => w.__cf.form.setFiles({ ref: refByName(w, "Name"), files: [], guard: null }), /is not an <input type="file">/);
+});
+
+test("page text uses main or role=main when it is the longest content element", () => {
+  const w = loadContent(`<nav>Site navigation</nav><div role="main">The main region holds the most text here</div><article>Short</article>`, FILES);
+  const page = w.__cf.text.pageText();
+  assert.equal(page.tag, "div");
+  assert.equal(page.text, "The main region holds the most text here");
+});
+
+test("a ref to a wrapper uses the single control inside it, including one in a shadow root", () => {
+  const w = loadContent(`<div role="group" aria-label="Nickname field"><span>Nickname</span><input id="nick"></div><x-field id="custom" role="group" aria-label="Custom field"></x-field>`, FILES);
+  w.document.getElementById("custom").attachShadow({ mode: "open" }).innerHTML = `<input id="inner">`;
+  assert.match(set(w, "Nickname field", "Ada"), /^Set text value to "Ada" \(previous: ""\) \(used the <input> inside ref_\d+\)$/);
+  assert.equal(w.document.getElementById("nick").value, "Ada");
+  set(w, "Custom field", "Bo");
+  assert.equal(w.document.getElementById("custom").shadowRoot.getElementById("inner").value, "Bo");
+});
+
+test("a wrapper with several controls asks for one of them", () => {
+  const w = loadContent(`<div role="group" aria-label="Name fields"><input aria-label="First"><input aria-label="Last"></div>`, FILES);
+  assert.throws(() => set(w, "Name fields", "x"), /ref_\d+ contains 2 form controls; pass the ref of one of them/);
 });

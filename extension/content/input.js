@@ -358,6 +358,13 @@
     return flags;
   }
 
+  // The indicator's Stop pill takes real clicks only; synthetic input looks through it to the page.
+  function pointTarget(doc, x, y) {
+    const el = doc.elementFromPoint(x, y);
+    if (el?.tagName !== "CLAUDE-FIREFOX-INDICATOR") return el;
+    return doc.elementsFromPoint(x, y).find((candidate) => candidate.tagName !== "CLAUDE-FIREFOX-INDICATOR") ?? null;
+  }
+
   function locate({ x, y, ref }) {
     if (ref) {
       const el = cf.tree.resolve(ref);
@@ -369,7 +376,7 @@
     let lx = x;
     let ly = y;
     for (;;) {
-      let el = doc.elementFromPoint(lx, ly);
+      let el = pointTarget(doc, lx, ly);
       if (!el) throw new Error(`No element at (${Math.round(x)}, ${Math.round(y)}). The point may be outside the page.`);
       for (let root = el.openOrClosedShadowRoot ?? el.shadowRoot; root; root = el.openOrClosedShadowRoot ?? el.shadowRoot) {
         const inner = root.elementFromPoint(lx, ly);
@@ -540,7 +547,7 @@
     for (let step = 1; step <= 5; step++) {
       x = start.x + ((endX - start.x) * step) / 5;
       y = start.y + ((endY - start.y) * step) / 5;
-      const target = doc.elementFromPoint(x, y) ?? over;
+      const target = pointTarget(doc, x, y) ?? over;
       fire(target, "pointermove", x, y, { buttons: 1 });
       fire(target, "mousemove", x, y, { buttons: 1 });
       if (source) {

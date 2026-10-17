@@ -5,6 +5,7 @@ import path from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { coerceArgs } from "./coerce.js";
 import { encode, onMessages } from "./framing.js";
 import { SOCKET_PATH, isMain, verifySocketDir } from "./paths.js";
 import { TOOLS, TOOL_BY_NAME } from "./tools.js";
@@ -87,11 +88,15 @@ export class BridgeClient {
   }
 }
 
-export async function callTool(bridge, name, args = {}, timeoutMs = CALL_TIMEOUT_MS) {
+export const callTimeout = (name, args) => (name === "computer" && args.action === "wait" ? Math.max(CALL_TIMEOUT_MS, Number(args.duration) * 1000 + 10_000 || 0) : CALL_TIMEOUT_MS);
+
+export async function callTool(bridge, name, rawArgs = {}, limitMs = Infinity) {
   const tool = TOOL_BY_NAME.get(name);
   if (!tool) throw new Error(`Unknown tool: ${name}`);
+  const args = coerceArgs(tool.inputSchema, rawArgs ?? {});
   const missing = (tool.inputSchema.required ?? []).filter((key) => args[key] === undefined);
   if (missing.length) throw new Error(`${name}: missing required argument(s): ${missing.join(", ")}`);
+  const timeoutMs = Math.min(callTimeout(name, args), limitMs);
   if (name === "browser_batch") return runBatch(bridge, args.actions);
   if (name === "file_upload") return bridge.call(name, await withFileContents(args), timeoutMs);
   return bridge.call(name, args, timeoutMs);
@@ -108,7 +113,7 @@ async function runBatch(bridge, actions) {
       if (name === "browser_batch") throw new Error("browser_batch cannot be nested");
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new Error("browser_batch timed out after 90s");
-      result = await callTool(bridge, name, action.input ?? {}, Math.min(CALL_TIMEOUT_MS, remaining));
+      result = await callTool(bridge, name, action.input ?? {}, remaining);
     } catch (err) {
       result = { content: [{ type: "text", text: err.message }], isError: true };
     }
@@ -138,7 +143,7 @@ async function withFileContents({ paths, ...rest }) {
 }
 
 export function createMcpServer({ bridge }) {
-  const server = new Server({ name: "claude-in-firefox", version: "0.1.0" }, { capabilities: { tools: {} } });
+  const server = new Server({ name: "claude-in-firefox", version: "0.2.0" }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     try {

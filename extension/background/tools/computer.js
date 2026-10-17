@@ -1,4 +1,5 @@
 import { assertSameHost, guardFor } from "../guard.js";
+import { watchNavigation } from "../navigation.js";
 import { parseRef } from "../tree.js";
 
 const CLICKS = {
@@ -8,14 +9,25 @@ const CLICKS = {
   triple_click: ["left", 3, "Triple-clicked"],
 };
 const DIRECTIONS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const SETTLING = new Set(["left_click", "right_click", "double_click", "triple_click", "type", "key"]);
+const HOVER_SETTLE_MS = 300;
+const sleep = (ms, signal) => new Promise((resolve) => {
+  if (signal?.aborted) return resolve();
+  const done = () => {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", done);
+    resolve();
+  };
+  const timer = setTimeout(done, ms);
+  signal?.addEventListener("abort", done, { once: true });
+});
 const clampInt = (value, min, max, fallback) => {
   const n = Math.round(Number(value ?? fallback));
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 };
 const image = (shot) => ({ type: "image", data: shot.base64, mimeType: shot.mimeType });
 
-export function computerTool({ api, content, capture }) {
+export function computerTool({ api, content, capture, watch = watchNavigation }) {
   async function act(tab, frameId, op, opArgs, action) {
     let frame = frameId;
     let args = { ...opArgs, guard: await guardFor(api, tab, frameId, action) };
@@ -51,7 +63,7 @@ export function computerTool({ api, content, capture }) {
     return [{ type: "text", text: `Screenshot ${shot.width}x${shot.height} (jpeg)${scaled}` }, image(shot)];
   }
 
-  async function run({ tab, args }) {
+  async function perform(tab, args, signal) {
     const { action } = args;
     if (CLICKS[action]) {
       const [button, count, verb] = CLICKS[action];
@@ -61,7 +73,6 @@ export function computerTool({ api, content, capture }) {
       let text = `${verb} ${target.label}`;
       for (const url of result.opened ?? []) {
         const opened = await api.tabs.create({ url, openerTabId: tab.id, windowId: tab.windowId, active: false });
-        await api.tabs.group({ groupId: tab.groupId, tabIds: [opened.id] });
         text += ` (link opened in new tab ${opened.id})`;
       }
       return text;
@@ -77,14 +88,15 @@ export function computerTool({ api, content, capture }) {
       }
       case "wait": {
         const seconds = Number(args.duration);
-        if (!(seconds > 0 && seconds <= 10)) throw new Error("wait: duration must be between 0 and 10 seconds");
-        await sleep(seconds * 1000);
+        if (!(seconds > 0 && seconds <= 30)) throw new Error("wait: duration must be between 0 and 30 seconds");
+        await sleep(seconds * 1000, signal);
         return `Waited ${seconds} second(s)`;
       }
       case "hover": {
         const target = pointerTarget(tab, args, action);
         const result = await act(tab, target.frameId, "input.hover", target.args, action);
         await moveCursor(tab.id, target.frameId, result.point);
+        await sleep(HOVER_SETTLE_MS, signal);
         return `Hovered ${target.label}`;
       }
       case "scroll": {
@@ -130,6 +142,20 @@ export function computerTool({ api, content, capture }) {
       default:
         throw new Error(`computer: unknown action "${action}"`);
     }
+  }
+
+  async function run({ tab, args, signal }) {
+    if (!SETTLING.has(args.action)) return perform(tab, args, signal);
+    const navigation = watch(api, tab.id, { signal });
+    let result;
+    try {
+      result = await perform(tab, args, signal);
+    } catch (err) {
+      navigation.stop();
+      throw err;
+    }
+    const suffix = await navigation.settle();
+    return suffix ? `${result} ${suffix}` : result;
   }
 
   return { computer: { tabScoped: true, run } };

@@ -3,20 +3,49 @@
   const cf = (globalThis.__cf ??= {});
   const NUMERIC = new Set(["number", "range"]);
 
+  const CONTROL = 'input:not([type="hidden"]), select, textarea, [contenteditable]:not([contenteditable="false"])';
+
   const fire = (el, type) => el.dispatchEvent(new el.ownerDocument.defaultView.Event(type, { bubbles: true }));
 
+  function controlsInside(root) {
+    const found = [];
+    const visit = (node) => {
+      const shadow = node.openOrClosedShadowRoot ?? node.shadowRoot;
+      for (const child of [...(shadow?.children ?? []), ...node.children]) {
+        if (child.matches(CONTROL)) found.push(child);
+        else visit(child);
+      }
+    };
+    visit(root);
+    return found;
+  }
+
+  // Widgets often wrap the real control in a label, a field container or a shadow root.
+  function controlFor(el, ref) {
+    if (el.matches(CONTROL)) return el;
+    const inside = controlsInside(el);
+    if (inside.length > 1) throw new Error(`${ref} contains ${inside.length} form controls; pass the ref of one of them`);
+    return inside[0] ?? el;
+  }
+
   function setValue({ ref, value, guard }) {
-    const el = cf.tree.resolve(ref);
+    const target = cf.tree.resolve(ref);
+    const el = controlFor(target, ref);
     cf.dom.guardHost(guard);
     el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+    const result = applyValue(el, value);
+    return el === target ? result : `${result} (used the <${el.tagName.toLowerCase()}> inside ${ref})`;
+  }
+
+  function applyValue(el, value) {
     const tag = el.tagName.toUpperCase();
     const type = tag === "INPUT" ? el.type : "";
     const sensitive = cf.tree.isSensitive(el);
-    const show = (v) => (sensitive ? "[redacted]" : JSON.stringify(String(v)));
+    const show = (v) => (sensitive ? "(hidden)" : JSON.stringify(String(v)));
 
     if (tag === "SELECT") return selectOption(el, value, sensitive);
     if (type === "checkbox") {
-      if (typeof value !== "boolean") throw new Error("Checkbox requires a boolean value (true/false)");
+      if (typeof value !== "boolean") throw new Error("A checkbox needs true or false");
       const previous = el.checked;
       if (previous !== value) el.click();
       return `Set checkbox to ${el.checked} (previous: ${previous})`;
@@ -60,14 +89,14 @@
     const option = options.find((o) => o.value === wanted)
       ?? options.find((o) => o.text === wanted)
       ?? options.find((o) => o.text.trim().toLowerCase() === wanted.trim().toLowerCase());
-    if (!option && sensitive) throw new Error("Option not found (options of this field are not listed because it is sensitive)");
-    if (!option) throw new Error(`Option "${wanted}" not found. Available options: ${options.map((o) => `"${o.text.trim()}" (value: "${o.value}")`).join(", ")}`);
+    if (!option && sensitive) throw new Error("No option matches (options of a sensitive field are not listed)");
+    if (!option) throw new Error(`No option matches "${wanted}". Options: ${options.map((o) => `"${o.text.trim()}" = "${o.value}"`).join("; ")}`);
     const previous = el.selectedOptions[0]?.text.trim() ?? "";
     el.focus();
     option.selected = true;
     fire(el, "input");
     fire(el, "change");
-    if (sensitive) return "Selected [redacted] (previous: [redacted])";
+    if (sensitive) return "Selected an option (sensitive field; values hidden)";
     return `Selected "${option.text.trim()}" (previous: "${previous}")`;
   }
 

@@ -136,3 +136,19 @@ test("BridgeClient fails pending calls when the host goes away and reconnects on
   assert.deepEqual(await client.call("tabs_create", {}, 1000), { content: [], isError: false });
   assert.equal(second.received[0].type, "hello");
 });
+
+test("stringified coordinates and batch actions are coerced before reaching Firefox", async () => {
+  const bridge = fakeBridge(() => ok("done"));
+  await callTool(bridge, "computer", { action: "left_click", tabId: "3", coordinate: "[10, 20]" });
+  assert.deepEqual(bridge.calls[0].args, { action: "left_click", tabId: 3, coordinate: [10, 20] });
+  await callTool(bridge, "browser_batch", { actions: JSON.stringify([{ name: "navigate", input: { tabId: "3", url: "a.test" } }]) });
+  assert.deepEqual(bridge.calls[1].args, { tabId: 3, url: "a.test" });
+});
+
+test("wait calls get their duration plus 10 s and other calls 30 s", async () => {
+  const bridge = fakeBridge(() => ok("done"));
+  await callTool(bridge, "computer", { action: "wait", duration: 30, tabId: 1 });
+  await callTool(bridge, "computer", { action: "wait", duration: 2, tabId: 1 });
+  await callTool(bridge, "computer", { action: "screenshot", tabId: 1 });
+  assert.deepEqual(bridge.calls.map((c) => c.timeoutMs), [40_000, 30_000, 30_000]);
+});

@@ -12,7 +12,7 @@ test("roles, names, refs and attributes follow the line format", () => {
     <button type="submit" disabled><span>Log in</span></button></form></main>`);
   const text = render(w);
   assert.match(text, /^navigation \[ref_\d+\]$/m);
-  assert.match(text, /^ link "Home" \[ref_\d+\] href="\/home"$/m);
+  assert.match(text, /^ link "Home" \[ref_\d+\] href="https:\/\/example.test\/home"$/m);
   assert.match(text, /^ heading "Sign in" \[ref_\d+\]$/m);
   assert.match(text, /textbox "Email" \[ref_\d+\] type="email" placeholder="you@example.com" value="a@b.c"/);
   assert.match(text, /checkbox "Remember me" \[ref_\d+\] \(checked\) type="checkbox"/);
@@ -26,8 +26,8 @@ test("password, one-time-code and card values are redacted and hidden inputs ski
     <select autocomplete="cc-exp-month"><option selected>01</option><option>02</option></select>`);
   const text = render(w);
   for (const secret of ["hunter2", "123456", "4111", "csrf-token", "Ada Lovelace", "5555"]) assert.ok(!text.includes(secret), secret);
-  assert.equal(text.match(/value="\[value redacted\]"/g).length, 5);
-  assert.match(text, /combobox "\[value redacted\]" \[ref_\d+\]/);
+  assert.equal(text.match(/value="\(sensitive value hidden\)"/g).length, 5);
+  assert.match(text, /combobox "\(sensitive value hidden\)" \[ref_\d+\]/);
   assert.doesNotMatch(text, /option/);
 });
 
@@ -79,7 +79,7 @@ test("open shadow roots and same-origin iframes are traversed", () => {
   w.document.getElementById("f").contentDocument.body.innerHTML = "<a href='/in-frame'>Inside frame</a>";
   const text = render(w);
   assert.match(text, /button "Shadow button" \[ref_\d+\]/);
-  assert.match(text, /^iframe \[ref_\d+\]\n link "Inside frame" \[ref_\d+\] href="\/in-frame"$/m);
+  assert.match(text, /^iframe \[ref_\d+\]\n link "Inside frame" \[ref_\d+\] href="https:\/\/example.test\/in-frame"$/m);
 });
 
 test("refId focuses on one subtree and the frame prefix marks refs", () => {
@@ -134,4 +134,24 @@ test("find ranks name matches first and formats hits", () => {
   assert.deepEqual(scoreNodes(nodes, "zebra"), []);
   assert.match(formatFind(scoreNodes(nodes, "zebra"), "zebra"), /^No elements matched "zebra"/);
   assert.match(formatFind(scoreNodes(nodes, "cancel"), "cancel"), /^Found 1 element\(s\) matching "cancel", best first:\n\n- ref_1: button "Cancel"$/);
+});
+
+test("expanded, collapsed, selected and pressed states are shown", () => {
+  const w = loadContent(`<button aria-expanded="false">Menu</button><button aria-expanded="true">Open menu</button>
+    <div role="tab" aria-selected="true">Overview</div><button aria-pressed="true">Bold</button>
+    <details open><summary>More</summary><p>Hidden text</p></details><details><summary>Less</summary></details>`);
+  const text = render(w);
+  assert.match(text, /button "Menu" \[ref_\d+\] \(collapsed\)/);
+  assert.match(text, /button "Open menu" \[ref_\d+\] \(expanded\)/);
+  assert.match(text, /tab "Overview" \[ref_\d+\] \(selected\)/);
+  assert.match(text, /button "Bold" \[ref_\d+\] \(pressed\)/);
+  assert.match(text, /button "More" \[ref_\d+\] \(expanded\)/);
+  assert.match(text, /button "Less" \[ref_\d+\] \(collapsed\)/);
+});
+
+test("links show their resolved absolute URL", () => {
+  const w = loadContent(`<a href="../docs/start?x=1#top">Start</a><a href="https://other.test/">Other</a>`, ["tree.js"], { url: "https://example.test/app/page" });
+  const text = render(w);
+  assert.match(text, /link "Start" \[ref_\d+\] href="https:\/\/example\.test\/docs\/start\?x=1#top"/);
+  assert.match(text, /link "Other" \[ref_\d+\] href="https:\/\/other\.test\/"/);
 });
