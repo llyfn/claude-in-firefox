@@ -70,6 +70,7 @@ jobs:
           import { startHarness, textOf } from "$GITHUB_WORKSPACE/test/e2e/harness.js";
           const h = await startHarness();
           try {
+            await h.call("tabs_context", { createIfEmpty: true });
             const tabId = Number(/Created tab (\d+)/.exec(textOf(await h.call("tabs_create")))[1]);
             await h.call("navigate", { tabId, url: h.fixtures.a + "/basic.html" });
             const context = await h.bidi.contextOf("/basic.html");
