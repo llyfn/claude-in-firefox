@@ -12,7 +12,8 @@ test("console arguments render as compact JSON-like text with errors as name and
   assert.equal(format(42), "42");
   assert.equal(format({ n: 1 }), '{"n":1}');
   assert.equal(format({ a: [1, "x", { b: null }] }), '{"a":[1,"x",{"b":null}]}');
-  assert.equal(format(new TypeError("bad")), "TypeError: bad");
+  assert.match(format(new TypeError("bad")), /^TypeError: bad\n {4}\S/);
+  assert.equal(format({ e: new TypeError("inner") }), '{"e":TypeError: inner}');
 });
 
 test("console formatting shows getters without invoking them and marks cycles", () => {
@@ -45,4 +46,17 @@ test("console queue keeps 1000 entries per flush and reports how many were dropp
   assert.equal(entries.length, 1001);
   assert.equal(entries[999].text, "m999");
   assert.equal(entries[1000].text, "[5 console messages dropped]");
+});
+
+test("error stacks are limited to 10 lines and an unreadable stack is skipped", () => {
+  const { format } = hook();
+  const deep = new Error("deep");
+  deep.stack = ["Error: deep", ...Array.from({ length: 15 }, (_, i) => `f${i}@https://a.test/app.js:${i}:1`)].join("\n");
+  const lines = format(deep).split("\n");
+  assert.equal(lines[0], "Error: deep");
+  assert.equal(lines.length, 11);
+  assert.equal(lines[1], "    Error: deep");
+  const sealed = new Error("sealed");
+  Object.defineProperty(sealed, "stack", { get() { throw new Error("no"); } });
+  assert.equal(format(sealed), "Error: sealed");
 });
