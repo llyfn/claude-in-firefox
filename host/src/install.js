@@ -4,10 +4,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { EXTENSION_ID, HOST_NAME, PACKAGE_NAME, PIPE_NAME_FILE, REGISTRY_KEY, appDirFor, nativeManifestPath, packageDirFor } from "./paths.js";
+import { EXTENSION_ID, HOST_NAME, PACKAGE_NAME, PIPE_KEY_FILE, PIPE_NAME_FILE, REGISTRY_KEY, appDirFor, bridgeAddress, bridgeKey, nativeManifestPath, packageDirFor } from "./paths.js";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MCP_NAME = "firefox";
+
+const succeeds = (fn) => {
+  try {
+    fn();
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const quoteForCmd = (arg) => (/^[\w@%+=:,./\\-]+$/.test(arg) ? arg : `"${String(arg).replace(/"/g, '""')}"`);
 
@@ -102,8 +111,8 @@ export async function install({ homeDir = os.homedir(), platform = process.platf
     // The wrapper's bytes are decoded with the OEM code page, so it names the host script relative to itself instead of embedding profile paths.
     fs.writeFileSync(wrapperPath, `@echo off\r\n"${nodePath.replace(/%/g, "%%")}" "%~dp0node_modules\\@llyfn\\claude-in-firefox\\host\\src\\native-host.js" %*\r\n`);
     if (/[^\x00-\x7f]/.test(nodePath)) warnings.push(`Node is installed at a path with non-ASCII characters (${nodePath}); Firefox may fail to start the native host. Install Node in a path with only ASCII characters if the add-on cannot connect.`);
-    const pipeFile = path.join(appDir, PIPE_NAME_FILE);
-    if (!fs.existsSync(pipeFile)) fs.writeFileSync(pipeFile, `\\\\.\\pipe\\claude-firefox-bridge-${randomBytes(16).toString("hex")}\n`);
+    if (!succeeds(() => bridgeAddress({ platform, appDir }))) fs.writeFileSync(path.join(appDir, PIPE_NAME_FILE), `\\\\.\\pipe\\claude-firefox-bridge-${randomBytes(16).toString("hex")}\n`);
+    if (!succeeds(() => bridgeKey({ platform, appDir }))) fs.writeFileSync(path.join(appDir, PIPE_KEY_FILE), `${randomBytes(32).toString("hex")}\n`);
   } else {
     wrapperPath = path.join(appDir, "native-host");
     fs.writeFileSync(wrapperPath, `#!/bin/sh\nexec "${nodePath}" "${hostScript}" "$@"\n`);

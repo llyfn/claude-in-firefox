@@ -12,6 +12,7 @@ const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8")).version;
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "cfb-install-"));
 const PIPE = /^\\\\\.\\pipe\\claude-firefox-bridge-[0-9a-f]{32}\n$/;
+const KEY = /^[0-9a-f]{64}\n$/;
 
 function fakeRun({ failing = [], skipPackage = false } = {}) {
   const calls = [];
@@ -206,14 +207,31 @@ test("on Windows a percent sign in the node path is escaped and a non-ASCII one 
   assert.deepEqual(odd.warnings, ["Node is installed at a path with non-ASCII characters (C:\\Users\\\u00e9\\node.exe); Firefox may fail to start the native host. Install Node in a path with only ASCII characters if the add-on cannot connect."]);
 });
 
-test("the Windows pipe name is created once and kept", async () => {
+test("the Windows pipe name and key are created once and kept", async () => {
   const local = tmp();
   const env = { PATH: "", LOCALAPPDATA: local, npm_execpath: "C:/npm/npm-cli.js" };
   const options = { homeDir: tmp(), platform: "win32", env, nodePath: "node.exe", packageRoot: REPO, claude: false };
+  const read = (name) => fs.readFileSync(path.join(local, "claude-in-firefox", name), "utf8");
   await install({ ...options, run: fakeRun().run });
-  const first = fs.readFileSync(path.join(local, "claude-in-firefox/pipe-name"), "utf8");
+  const name = read("pipe-name");
+  const key = read("pipe-key");
+  assert.match(key, KEY);
   await install({ ...options, run: fakeRun().run });
-  assert.equal(fs.readFileSync(path.join(local, "claude-in-firefox/pipe-name"), "utf8"), first);
+  assert.equal(read("pipe-name"), name);
+  assert.equal(read("pipe-key"), key);
+});
+
+test("install replaces a malformed Windows pipe name or key", async () => {
+  const local = tmp();
+  const env = { PATH: "", LOCALAPPDATA: local, npm_execpath: "C:/npm/npm-cli.js" };
+  const options = { homeDir: tmp(), platform: "win32", env, nodePath: "node.exe", packageRoot: REPO, claude: false };
+  const file = (name) => path.join(local, "claude-in-firefox", name);
+  fs.mkdirSync(path.join(local, "claude-in-firefox"));
+  fs.writeFileSync(file("pipe-name"), "\\\\.\\pipe\\something-else\n");
+  fs.writeFileSync(file("pipe-key"), "not a key\n");
+  await install({ ...options, run: fakeRun().run });
+  assert.match(fs.readFileSync(file("pipe-name"), "utf8"), PIPE);
+  assert.match(fs.readFileSync(file("pipe-key"), "utf8"), KEY);
 });
 
 test("install removes the host folder left by 0.1 and 0.2", async () => {
