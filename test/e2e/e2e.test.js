@@ -359,7 +359,7 @@ describe("session window", () => {
     tabId = await openTab("/session.html");
   });
 
-  test("the session's active tab is visible even though its window is not focused", async () => {
+  test("the session's active tab stays visible", async () => {
     await eventually(async () => assert.match(await log(), /visibility visible/));
     assert.doesNotMatch(await log(), /visibility hidden/);
   });
@@ -369,7 +369,7 @@ describe("session window", () => {
     const ref = /- (ref_\d+):/.exec(confirmed)[1];
     const r = textOf(await h.call("computer", { tabId, action: "left_click", ref }));
     assert.match(r, /Dialog: confirm\("Delete this item\?"\) → OK/);
-    assert.match(await log(), /confirm returned true/);
+    await eventually(async () => assert.match(await log(), /confirm returned true/));
     const promptRef = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query: "Prompt button" })))[1];
     assert.match(textOf(await h.call("computer", { tabId, action: "left_click", ref: promptRef })), /Dialog: prompt\("Name\?"\) → "Ada"/);
   });
@@ -377,8 +377,11 @@ describe("session window", () => {
   test("page beforeunload handlers are suppressed in session tabs", async () => {
     const ref = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query: "Fire beforeunload button" })))[1];
     await h.call("computer", { tabId, action: "left_click", ref });
-    const text = await log();
-    assert.match(text, /fired beforeunload/);
+    const text = await eventually(async () => {
+      const current = await log();
+      assert.match(current, /fired beforeunload/);
+      return current;
+    });
     assert.doesNotMatch(text, /page beforeunload ran/);
   });
 
@@ -386,7 +389,7 @@ describe("session window", () => {
     const shot = textOf(await h.call("computer", { tabId, action: "screenshot" }));
     const [, w, hgt] = /Screenshot (\d+)x(\d+)/.exec(shot).map(Number);
     await h.call("computer", { tabId, action: "left_click", coordinate: [Math.round(w / 2), hgt - 20] });
-    assert.match(await log(), /bottom clicked/);
+    await eventually(async () => assert.match(await log(), /bottom clicked/));
   });
 
   test("stringified arguments are accepted", async () => {

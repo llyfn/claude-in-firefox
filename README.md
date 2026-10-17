@@ -10,7 +10,7 @@ Drive your everyday Firefox from Claude Code. A Firefox extension plus a local M
 Claude Code ──MCP stdio──▶ host/src/mcp-server.js ──unix socket──▶ native-host.js ──native messaging──▶ extension
 ```
 
-Each Claude Code session gets its own Firefox window, opened in the background without taking focus, and can only touch tabs in that window (plus popups opened from it). The window title and, when tab groups are enabled, a tab group show the session's status: ⌛ working, ✅ idle, ⏸ stopped. A violet glow and a phantom cursor show which tab Claude is working in.
+Each Claude Code session gets its own Firefox window, opened behind the Firefox window you are using, and can only touch tabs in that window (plus popups opened from it). The window title and, when tab groups are enabled, a tab group show the session's status: ⌛ working, ✅ idle, ⏸ stopped. A violet glow and a phantom cursor show which tab Claude is working in.
 
 The MCP server runs from this repository. The native host is the process Firefox launches, and it runs from a copy outside the repository (`~/Library/Application Support/claude-in-firefox/host/` on macOS, `~/.local/share/claude-in-firefox/host/` on Linux), because macOS privacy protection blocks processes that Firefox launches from reading `~/Desktop`, `~/Documents` and `~/Downloads`.
 
@@ -65,7 +65,7 @@ To update, install the `.xpi` from the newer release (the add-on does not update
 - Disabling, reloading or updating the add-on can break `console` and page dialogs in tabs that were already open; reload those tabs.
 - A dialog raised by a page's very first scripts, before the add-on has marked the tab as a session tab, appears normally and stalls that call until it times out.
 - Firefox opens every new window in front. When you are using Firefox, the add-on gives focus back to your window; when another app is in front, opening a session's window brings Firefox to the front.
-- Updating to 0.2.0 asks for the new "sessions" permission, which stores each session's id on its window so sessions survive add-on reloads and Firefox restarts.
+- Updating to 0.2.0 asks for the new "sessions" permission, which stores each session's id on its window so sessions survive add-on reloads, and Firefox restarts that reopen your previous windows.
 
 ## Development
 
