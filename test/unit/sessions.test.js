@@ -239,9 +239,7 @@ test("close forgets the session and clears its window values", async () => {
 
 test("a call racing the first lookup after a reload sees the recovered stop state", async () => {
   const { api } = fakeApi();
-  const first = createSessions(api);
-  await first.context(ID, { createIfEmpty: true });
-  await first.setStopped(ID, true);
+  await createSessions(api).context(ID, { createIfEmpty: true });
   const second = createSessions(api);
   await Promise.all([second.setStopped(ID, true), second.isStopped(ID)]);
   assert.equal(await second.isStopped(ID), true);
@@ -289,14 +287,16 @@ test("closing the main window also clears the popup windows' values", async () =
 });
 
 test("closing a popup window leaves the session in place", async () => {
-  const { api, addTab, addWindow, closeWindow } = fakeApi();
+  const { api, counts, addTab, addWindow, closeWindow } = fakeApi();
   const sessions = createSessions(api);
   const ctx = await sessions.context(ID, { createIfEmpty: true });
   const popupWindow = addWindow({ type: "popup" });
   await sessions.adoptOpened(addTab({ windowId: popupWindow, url: "https://login.test/", openerTabId: 1 }));
   closeWindow(popupWindow);
   sessions.windowRemoved(popupWindow);
+  counts.getAll = 0;
   assert.equal((await sessions.context(ID)).windowId, ctx.windowId);
+  assert.equal(counts.getAll, 0);
 });
 
 test("sessions work when the tab group APIs are missing entirely", async () => {
