@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { STOPPED_MESSAGE, createControl } from "../../extension/background/control.js";
+import { createDialogLog } from "../../extension/background/dialogs.js";
 import { createDispatcher } from "../../extension/background/dispatch.js";
 
 function setup(tools, ownedTab = async (_sessionId, tabId) => ({ id: tabId, url: "https://example.test/", active: true }), { changes = "" } = {}) {
@@ -127,6 +128,34 @@ test("Stop rejects the running and queued calls of the session with one result e
   assert.deepEqual(ran, [1]);
   const later = await dispatch(call("slow", { tabId: 1, n: 3 }, "1:3")).then(() => sent.at(-1));
   assert.equal(later.content[0].text, STOPPED_MESSAGE);
+});
+
+test("a call that Stop rejected leaves its dialog reports for the next call", async () => {
+  const stopped = new Set();
+  const sessions = {
+    ownedTab: async (_s, tabId) => ({ id: tabId, active: true }),
+    activate: async () => {},
+    tabChanges: async () => "",
+    isStopped: async (id) => stopped.has(id),
+    setStopped: async (id, value) => { if (value) stopped.add(id); else stopped.delete(id); },
+    setStatus: async () => {},
+  };
+  const control = createControl({ sessions, idleAfterMs: 5 });
+  const dialogs = createDialogLog();
+  const tools = {
+    slow: { tabScoped: true, run: ({ signal }) => new Promise((resolve) => signal.addEventListener("abort", () => resolve("late"), { once: true })) },
+    look: { tabScoped: true, run: async () => "ok" },
+  };
+  const sent = [];
+  const dispatch = createDispatcher({ tools, sessions, activity: { start() {}, end() {} }, control, dialogs, send: (m) => sent.push(m) });
+  const running = dispatch(call("slow", { tabId: 1 }, "1:1"));
+  await new Promise((resolve) => setImmediate(resolve));
+  dialogs.add(1, "s", { kind: "alert", message: "Saved", answer: null });
+  await control.stop("s");
+  await running;
+  await control.resume("s");
+  await dispatch(call("look", { tabId: 1 }, "1:2"));
+  assert.deepEqual(sent.map((m) => m.content.map((b) => b.text)), [[STOPPED_MESSAGE], ["ok", 'Dialog: alert("Saved") → dismissed']]);
 });
 
 test("dialog reports are added only to calls that own the tab", async () => {

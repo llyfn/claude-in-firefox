@@ -36,8 +36,9 @@ export function createControl({ sessions, onChange = async () => {}, onClosed = 
   return {
     // The call's own work may continue after Stop, but its result is never delivered.
     async run(sessionId, fn) {
-      if (stopped.has(sessionId) || await sessions.isStopped(sessionId)) throw new Error(STOPPED_MESSAGE);
+      // Taken before the lookup, so a Stop that lands during it aborts this signal.
       const { signal } = controllerOf(sessionId);
+      if (stopped.has(sessionId) || (await sessions.isStopped(sessionId)) || signal.aborted) throw new Error(STOPPED_MESSAGE);
       begin(sessionId);
       try {
         return await new Promise((resolve, reject) => {

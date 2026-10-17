@@ -61,6 +61,23 @@ test("Stop takes effect before the slow persist finishes", async () => {
   await stopping;
 });
 
+test("Stop that lands while a call looks up the stopped state still refuses the call", async () => {
+  const { sessions } = fakeSessions();
+  const lookup = sessions.isStopped;
+  sessions.isStopped = async (id) => {
+    const value = await lookup(id);
+    await sleep(20);
+    return value;
+  };
+  const control = createControl({ sessions, idleAfterMs: 5 });
+  let ran = false;
+  const call = control.run("s", async () => { ran = true; return "delivered"; });
+  await sleep(1);
+  await control.stop("s");
+  await assert.rejects(call, { message: STOPPED_MESSAGE });
+  assert.equal(ran, false);
+});
+
 test("close closes the session, aborts running calls and reports the tabs that left it", async () => {
   const { sessions } = fakeSessions();
   sessions.close = async () => [{ id: 1 }];
@@ -124,7 +141,6 @@ function fakeApi() {
       },
       query: async ({ windowId }) => [...tabs.values()].filter((t) => t.windowId === windowId).map(copy),
       group: async ({ tabIds, groupId }) => {
-        if (!true) throw new Error("Tab groups are disabled");
         const ids = [].concat(tabIds);
         const id = groupId ?? nextGroup++;
         if (!groups.has(id)) groups.set(id, { title: "", color: "", windowId: tabs.get(ids[0]).windowId });

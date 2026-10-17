@@ -26,6 +26,8 @@ export function createDispatcher({ tools, sessions, activity, control, dialogs, 
         activity.start(tab.id);
         try {
           const content = toContent(await def.run({ sessionId, args: { ...args, tabId }, tab, signal }));
+          // Stop already rejected this call, so its dialog reports wait for the next one.
+          if (signal.aborted) return content;
           return [...content, ...dialogs.take(tab.id, sessionId).map((text) => ({ type: "text", text }))];
         } finally {
           activity.end(tab.id);
