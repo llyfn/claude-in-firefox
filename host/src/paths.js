@@ -12,8 +12,10 @@ export const SOCKET_PATH = `/tmp/claude-firefox-bridge-${os.userInfo().uid}/brid
 export const PACKAGE_NAME = "@llyfn/claude-in-firefox";
 export const PACKAGE_VERSION = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 export const PIPE_NAME_FILE = "pipe-name";
+export const PIPE_KEY_FILE = "pipe-key";
 export const REGISTRY_KEY = `HKCU\\Software\\Mozilla\\NativeMessagingHosts\\${HOST_NAME}`;
 const PIPE_NAME = /^\\\\\.\\pipe\\claude-firefox-bridge-[0-9a-f]{32}$/;
+const PIPE_KEY = /^[0-9a-f]{64}$/;
 
 export function appDirFor(homeDir = os.homedir(), platform = process.platform, env = process.env) {
   if (platform === "darwin") return path.join(homeDir, "Library/Application Support/claude-in-firefox");
@@ -30,16 +32,23 @@ export function nativeManifestPath(homeDir = os.homedir(), platform = process.pl
 
 export const packageDirFor = (appDir) => path.join(appDir, "node_modules", "@llyfn", "claude-in-firefox");
 
-// Node cannot restrict a named pipe to one user, so on Windows the pipe's name is a secret kept in the user's profile.
-export function bridgeAddress({ platform = process.platform, appDir = appDirFor(os.homedir(), platform) } = {}) {
-  if (platform !== "win32") return SOCKET_PATH;
-  const file = path.join(appDir, PIPE_NAME_FILE);
-  let name = "";
+function readAppFile(appDir, name, pattern, what) {
+  const file = path.join(appDir, name);
+  let value = "";
   try {
-    name = fs.readFileSync(file, "utf8").trim();
+    value = fs.readFileSync(file, "utf8").trim();
   } catch {}
-  if (!PIPE_NAME.test(name)) throw new Error(`No valid bridge pipe name in ${file}. Run \`npx ${PACKAGE_NAME} install\`.`);
-  return name;
+  if (!pattern.test(value)) throw new Error(`No valid ${what} in ${file}. Run \`npx ${PACKAGE_NAME} install\`.`);
+  return value;
+}
+
+// Every local user can list pipe names, so the name in pipe-name is not a secret: the key from bridgeKey is what authenticates the pipe's server.
+export function bridgeAddress({ platform = process.platform, appDir = appDirFor(os.homedir(), platform) } = {}) {
+  return platform === "win32" ? readAppFile(appDir, PIPE_NAME_FILE, PIPE_NAME, "bridge pipe name") : SOCKET_PATH;
+}
+
+export function bridgeKey({ platform = process.platform, appDir = appDirFor(os.homedir(), platform) } = {}) {
+  return platform === "win32" ? readAppFile(appDir, PIPE_KEY_FILE, PIPE_KEY, "bridge key") : null;
 }
 
 export async function ensureSocketDir(dir) {

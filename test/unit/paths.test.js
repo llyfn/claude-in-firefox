@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PACKAGE_VERSION, REGISTRY_KEY, SOCKET_PATH, appDirFor, bridgeAddress, nativeManifestPath, packageDirFor, verifySocketDir } from "../../host/src/paths.js";
+import { PACKAGE_VERSION, REGISTRY_KEY, SOCKET_PATH, appDirFor, bridgeAddress, bridgeKey, nativeManifestPath, packageDirFor, verifySocketDir } from "../../host/src/paths.js";
 
 const tempRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "cfb-paths-"));
 
@@ -59,4 +59,21 @@ test("on Windows the bridge is the pipe named in the app directory, and a missin
   assert.equal(bridgeAddress({ platform: "win32", appDir }), pipe);
   fs.writeFileSync(path.join(appDir, "pipe-name"), "\\\\.\\pipe\\something-else\n");
   assert.throws(() => bridgeAddress({ platform: "win32", appDir }), /No valid bridge pipe name/);
+});
+
+test("on macOS and Linux there is no bridge key", () => {
+  assert.equal(bridgeKey({ platform: "linux", appDir: "/nowhere" }), null);
+  assert.equal(bridgeKey({ platform: "darwin", appDir: "/nowhere" }), null);
+});
+
+test("on Windows the bridge key is the one in the app directory, and a missing or malformed key says to install", () => {
+  const appDir = tempRoot();
+  const key = "0f".repeat(32);
+  assert.throws(() => bridgeKey({ platform: "win32", appDir }), /No valid bridge key in .*pipe-key\. Run `npx @llyfn\/claude-in-firefox install`\./);
+  fs.writeFileSync(path.join(appDir, "pipe-key"), `${key}\r\n`);
+  assert.equal(bridgeKey({ platform: "win32", appDir }), key);
+  fs.writeFileSync(path.join(appDir, "pipe-key"), `${key.toUpperCase()}\n`);
+  assert.throws(() => bridgeKey({ platform: "win32", appDir }), /No valid bridge key/);
+  fs.writeFileSync(path.join(appDir, "pipe-key"), `${key.slice(2)}\n`);
+  assert.throws(() => bridgeKey({ platform: "win32", appDir }), /No valid bridge key/);
 });
