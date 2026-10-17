@@ -36,13 +36,14 @@ function binDir(...names) {
 }
 
 // Unix refuses to remove entries of a read-only directory; Windows refuses to remove a directory that is a process's working directory.
+// A Windows child opens its working directory during its own startup, after "spawn", so the lock holds only once it has printed.
 async function blockRemoval(dir) {
   if (process.platform !== "win32") {
     fs.chmodSync(path.dirname(dir), 0o555);
     return async () => fs.chmodSync(path.dirname(dir), 0o755);
   }
-  const holder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: dir });
-  await once(holder, "spawn");
+  const holder = spawn(process.execPath, ["-e", "console.log('ready'); setInterval(() => {}, 1000)"], { cwd: dir });
+  await once(holder.stdout, "data");
   return async () => {
     holder.kill();
     await once(holder, "exit");
