@@ -43,7 +43,17 @@ async function blockRemoval(dir) {
     return async () => fs.chmodSync(path.dirname(dir), 0o755);
   }
   const holder = spawn(process.execPath, ["-e", "console.log('ready'); setInterval(() => {}, 1000)"], { cwd: dir });
-  await once(holder.stdout, "data");
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("The lock holder did not start within 10 s")), 10_000);
+      holder.stdout.once("data", () => { clearTimeout(timer); resolve(); });
+      holder.once("error", (err) => { clearTimeout(timer); reject(err); });
+      holder.once("exit", (code) => { clearTimeout(timer); reject(new Error(`The lock holder exited with ${code} before it started`)); });
+    });
+  } catch (err) {
+    holder.kill();
+    throw err;
+  }
   return async () => {
     holder.kill();
     await once(holder, "exit");
