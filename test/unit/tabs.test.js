@@ -52,14 +52,14 @@ test("framesSettled waits until the content scripts of a loaded child frame answ
   assert.deepEqual(pinged, [7, 7, 7]);
 });
 
-test("framesSettled gives up on a child frame that never answers within its second", { timeout: 5000 }, async () => {
+test("framesSettled gives up on a child frame that never answers once its one-second budget is spent", { timeout: 5000 }, async () => {
   const api = {
     tabs: { executeScript: async () => [[1, 1]], sendMessage: () => new Promise(() => {}) },
     webNavigation: { getAllFrames: async () => [top, loaded] },
   };
   const started = Date.now();
   await framesSettled(api, 1);
-  assert.ok(Date.now() - started < 1500, `framesSettled took ${Date.now() - started} ms`);
+  assert.ok(Date.now() - started < 1100, `framesSettled took ${Date.now() - started} ms`);
 });
 
 test("framesSettled does not wait for a child frame that stays blank", async () => {

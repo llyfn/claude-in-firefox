@@ -20,9 +20,9 @@ const COUNT_FRAMES = `(() => {
 })()`;
 
 // The content router answers every op, unknown ones with an error, once the frame's content scripts run.
-const answers = (api, tabId, frameId) => Promise.race([
+const answers = (api, tabId, frameId, timeoutMs) => Promise.race([
   api.tabs.sendMessage(tabId, { op: "ping" }, { frameId }).then(() => true, () => false),
-  new Promise((resolve) => setTimeout(resolve, 250, false)),
+  new Promise((resolve) => setTimeout(resolve, timeoutMs, false)),
 ]);
 
 // Out-of-process iframes register their frame ids after the top-level load event, can still show the initial about:blank then,
@@ -37,10 +37,12 @@ export async function framesSettled(api, tabId) {
     if (!children) return;
     if (children.length >= expected) {
       const loaded = children.filter((f) => f.url !== "about:blank");
-      const ready = await Promise.all(loaded.map((f) => answers(api, tabId, f.frameId)));
+      const timeoutMs = Math.min(250, end - Date.now());
+      const ready = await Promise.all(loaded.map((f) => answers(api, tabId, f.frameId, timeoutMs)));
       if (ready.filter(Boolean).length >= navigating) return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const left = end - Date.now();
+    if (left > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(50, left)));
   }
 }
 
