@@ -88,7 +88,7 @@ export const TOOLS = [
   },
   {
     name: "form_input",
-    description: "Set a form control by ref: text inputs and textareas (string), selects (option value or visible text), checkboxes (boolean), radio buttons (any value selects it), date/number/range inputs, and contenteditable elements. Fires input and change events so frameworks such as React notice the change.",
+    description: "Set a form control by ref: text inputs and textareas (string), selects (option value or visible text), checkboxes (boolean), radio buttons (any value selects it), date/number/range inputs, and contenteditable elements. Fires input and change events so frameworks X",
     inputSchema: { type: "object", properties: { ref: { type: "string" }, value: { type: ["string", "boolean", "number"] }, tabId }, required: ["ref", "value", "tabId"] },
   },
   {
