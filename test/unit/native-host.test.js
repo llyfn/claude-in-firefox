@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -24,11 +25,11 @@ function messageQueue(stream) {
   return { next: () => (queue.length ? Promise.resolve(queue.shift()) : new Promise((resolve) => waiters.push(resolve))) };
 }
 
-async function startHost() {
+async function startHost(options = {}) {
   const input = new PassThrough();
   const output = new PassThrough();
   const socketPath = tempAddress("sock");
-  const host = await startNativeHost({ input, output, address: socketPath });
+  const host = await startNativeHost({ input, output, address: socketPath, ...options });
   return { input, socketPath, host, fromHost: messageQueue(output) };
 }
 
@@ -65,6 +66,30 @@ test("calls use the session announced in hello and are ignored before it", async
   client.send({ type: "hello", sessionId: "real" });
   client.send({ type: "call", id: 2, sessionId: "forged", tool: "t", args: {} });
   assert.deepEqual(await h.fromHost.next(), { type: "call", id: "1:2", sessionId: "real", tool: "t", args: {} });
+  client.socket.destroy();
+});
+
+test("with a key the host answers the nonce in hello with an HMAC of it and keeps the session", async (t) => {
+  const key = "0f".repeat(32);
+  const h = await startHost({ key });
+  t.after(() => h.host.close());
+  const client = await connectClient(h.socketPath);
+  client.send({ type: "hello", sessionId: "s1", nonce: "n1" });
+  assert.deepEqual(await client.messages.next(), { type: "welcome", proof: createHmac("sha256", Buffer.from(key, "hex")).update("n1").digest("hex") });
+  client.send({ type: "call", id: 1, sessionId: "s1", tool: "t", args: {} });
+  assert.deepEqual(await h.fromHost.next(), { type: "call", id: "1:1", sessionId: "s1", tool: "t", args: {} });
+  client.socket.destroy();
+});
+
+test("with a key the host does not answer a hello without a string nonce", async (t) => {
+  const h = await startHost({ key: "0f".repeat(32) });
+  t.after(() => h.host.close());
+  const client = await connectClient(h.socketPath);
+  client.send({ type: "hello", sessionId: "s1", nonce: 5 });
+  client.send({ type: "call", id: 1, sessionId: "s1", tool: "t", args: {} });
+  assert.equal((await h.fromHost.next()).id, "1:1");
+  h.input.write(encode({ type: "result", id: "1:1", content: [], isError: false }));
+  assert.equal((await client.messages.next()).type, "result");
   client.socket.destroy();
 });
 

@@ -2,10 +2,10 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
-import { encode, onMessages, splitForFirefox } from "./framing.js";
-import { bridgeAddress, ensureSocketDir, isMain } from "./paths.js";
+import { bridgeProof, encode, onMessages, splitForFirefox } from "./framing.js";
+import { bridgeAddress, bridgeKey, ensureSocketDir, isMain } from "./paths.js";
 
-export async function startNativeHost({ input, output, address, platform = process.platform }) {
+export async function startNativeHost({ input, output, address, key = null, platform = process.platform }) {
   const unix = platform !== "win32";
   if (unix) {
     await ensureSocketDir(path.dirname(address));
@@ -24,8 +24,12 @@ export async function startNativeHost({ input, output, address, platform = proce
     const client = { socket, sessionId: null };
     clients.set(clientId, client);
     onMessages(socket, (msg) => {
-      if (msg.type === "hello") client.sessionId = msg.sessionId;
-      else if (msg.type === "call" && client.sessionId) toFirefox({ type: "call", id: `${clientId}:${msg.id}`, sessionId: client.sessionId, tool: msg.tool, args: msg.args });
+      if (msg.type === "hello") {
+        client.sessionId = msg.sessionId;
+        if (key && typeof msg.nonce === "string") socket.write(encode({ type: "welcome", proof: bridgeProof(key, msg.nonce) }));
+      } else if (msg.type === "call" && client.sessionId) {
+        toFirefox({ type: "call", id: `${clientId}:${msg.id}`, sessionId: client.sessionId, tool: msg.tool, args: msg.args });
+      }
     });
     socket.on("error", () => {});
     socket.on("close", () => {
@@ -75,7 +79,7 @@ async function claimSocketPath(socketPath) {
 
 if (isMain(import.meta.url)) {
   try {
-    const host = await startNativeHost({ input: process.stdin, output: process.stdout, address: bridgeAddress() });
+    const host = await startNativeHost({ input: process.stdin, output: process.stdout, address: bridgeAddress(), key: bridgeKey() });
     process.stdin.on("end", () => process.exit(0));
     process.on("SIGTERM", () => { host.close(); process.exit(0); });
   } catch (err) {
