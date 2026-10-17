@@ -187,12 +187,14 @@ export async function startHarness() {
   const fixtures = await startFixtures();
   // Without these, downloads land in the user's Downloads folder.
   const downloads = fs.mkdtempSync(path.join(os.tmpdir(), "claude-firefox-e2e-downloads-"));
+  // web-ext writes string prefs into the profile without escaping, and Firefox drops a pref with an unknown escape such as "\U".
+  const downloadDir = downloads.replaceAll("\\", "\\\\");
   const bidiPort = await freePort();
   const webExt = spawn(process.execPath, [
     path.join(ROOT, "node_modules/web-ext/bin/web-ext.js"),
     "run", "--source-dir", path.join(ROOT, "extension"), "--firefox", FIREFOX,
     "--no-reload", "--no-input", "--pref", "browser.tabs.groups.enabled=true", "--start-url", "about:blank",
-    "--pref", "browser.download.folderList=2", "--pref", `browser.download.dir=${downloads}`, "--pref", "browser.download.alwaysOpenPanel=false",
+    "--pref", "browser.download.folderList=2", "--pref", `browser.download.dir=${downloadDir}`, "--pref", "browser.download.alwaysOpenPanel=false",
     // The Remote Agent's recommended prefs would change focus handling, popup blocking and background throttling, which these tests rely on.
     `--arg=--remote-debugging-port=${bidiPort}`, "--pref", "remote.prefs.recommended=false",
   ], { stdio: ["ignore", "pipe", "pipe"] });
