@@ -1,20 +1,20 @@
-const tabId = { type: "integer", description: "ID of a tab in this session's tab group (see tabs_context)." };
+const tabId = { type: "integer", description: "ID of a tab in this session's Firefox window (see tabs_context)." };
 const point = (description) => ({ type: "array", items: { type: "number" }, minItems: 2, maxItems: 2, description });
 
 export const TOOLS = [
   {
     name: "tabs_context",
-    description: "List the tabs in this session's Firefox tab group. Call this first in every conversation to learn which tab IDs you may use. Each Claude Code session gets its own group, and tabs outside it cannot be controlled. Pass createIfEmpty: true to create the group (with one blank tab) when this session has none yet.",
-    inputSchema: { type: "object", properties: { createIfEmpty: { type: "boolean", description: "Create the tab group with a blank tab if this session has none yet." } } },
+    description: "List the tabs in this session's Firefox window. Call this first in every conversation to learn which tab IDs you may use. Each Claude Code session gets its own window, and tabs outside it cannot be controlled. Pass createIfEmpty: true to open the window (with one blank tab) when this session has none yet. Later results end with a \"Tabs changed\" line when tabs open or close in the window.",
+    inputSchema: { type: "object", properties: { createIfEmpty: { type: "boolean", description: "Open the session's window with a blank tab if this session has none yet." } } },
   },
   {
     name: "tabs_create",
-    description: "Open a new blank tab in this session's tab group and return its tab ID. Prefer a fresh tab per task over reusing tabs the user is looking at.",
+    description: "Open a new blank tab in this session's window and return its tab ID.",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "tabs_close",
-    description: "Close a tab in this session's tab group.",
+    description: "Close a tab in this session's window.",
     inputSchema: { type: "object", properties: { tabId }, required: ["tabId"] },
   },
   {

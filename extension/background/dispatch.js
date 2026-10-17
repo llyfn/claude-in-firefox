@@ -18,6 +18,7 @@ export function createDispatcher({ tools, sessions, activity, send }) {
     if (!Number.isInteger(tabId)) throw new Error(`${tool}: tabId must be an integer`);
     return enqueue(tabId, async () => {
       const tab = await sessions.ownedTab(sessionId, tabId);
+      await sessions.activate(tab);
       activity.start(tab.id);
       try {
         return await def.run({ sessionId, args: { ...args, tabId }, tab });
@@ -27,9 +28,15 @@ export function createDispatcher({ tools, sessions, activity, send }) {
     });
   }
 
+  async function notes({ sessionId, tool }) {
+    if (tool === "tabs_context") return [];
+    const changes = await sessions.tabChanges(sessionId).catch(() => "");
+    return changes ? [{ type: "text", text: changes }] : [];
+  }
+
   return async function dispatch(msg) {
     if (msg.type === "session_closed") {
-      sessions.close(msg.sessionId);
+      await sessions.close(msg.sessionId);
       return;
     }
     if (msg.type !== "call") return;
@@ -39,12 +46,13 @@ export function createDispatcher({ tools, sessions, activity, send }) {
     } catch (err) {
       reply = { content: [{ type: "text", text: err?.message || String(err) }], isError: true };
     }
+    reply.content.push(...(await notes(msg)));
     send({ type: "result", id: msg.id, ...reply });
   };
 }
 
 function toContent(value) {
   if (typeof value === "string") return [{ type: "text", text: value }];
-  if (Array.isArray(value)) return value;
+  if (Array.isArray(value)) return [...value];
   throw new Error("Tool returned an unsupported result");
 }

@@ -21,6 +21,7 @@ installLogListeners(api, store);
 api.tabs.onCreated.addListener((tab) => {
   sessions.adoptOpened(tab).catch(() => {});
 });
+api.windows.onRemoved.addListener((windowId) => sessions.windowRemoved(windowId));
 
 const tools = {
   ...tabTools({ api, sessions }),

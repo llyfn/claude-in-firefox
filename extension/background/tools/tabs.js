@@ -11,7 +11,7 @@ export function tabTools({ api, sessions }) {
       tabScoped: false,
       async run({ sessionId, args }) {
         const context = await sessions.context(sessionId, { createIfEmpty: args.createIfEmpty === true });
-        return context ? JSON.stringify(context) : "This session has no tab group yet. Call tabs_context with createIfEmpty: true to create one.";
+        return context ? JSON.stringify(context) : "This session has no window yet. Call tabs_context with createIfEmpty: true to create one.";
       },
     },
     tabs_create: {

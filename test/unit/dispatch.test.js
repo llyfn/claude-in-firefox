@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createDispatcher } from "../../extension/background/dispatch.js";
 
-function setup(tools, ownedTab = async (_sessionId, tabId) => ({ id: tabId, url: "https://example.test/" })) {
+function setup(tools, ownedTab = async (_sessionId, tabId) => ({ id: tabId, url: "https://example.test/", active: true }), { changes = "" } = {}) {
   const sent = [];
   const closed = [];
   const events = [];
+  const activated = [];
   const activity = { start: (id) => events.push(["start", id]), end: (id) => events.push(["end", id]) };
-  const sessions = { ownedTab, close: (id) => closed.push(id) };
-  return { dispatch: createDispatcher({ tools, sessions, activity, send: (m) => sent.push(m) }), sent, closed, events };
+  const sessions = { ownedTab, activate: async (tab) => activated.push(tab.id), tabChanges: async () => changes, close: async (id) => closed.push(id) };
+  return { dispatch: createDispatcher({ tools, sessions, activity, send: (m) => sent.push(m) }), sent, closed, events, activated };
 }
 const call = (tool, args = {}, id = "1:1") => ({ type: "call", id, sessionId: "s", tool, args });
 
@@ -42,7 +43,7 @@ test("tab-scoped tools receive the owned tab and drive the indicator", async () 
 });
 
 test("ownership failures are errors and never start the indicator", async () => {
-  const { dispatch, sent, events } = setup({ look: { tabScoped: true, run: async () => "ok" } }, async () => { throw new Error("Tab 9 is not in this session's tab group. Valid tab IDs: 5"); });
+  const { dispatch, sent, events } = setup({ look: { tabScoped: true, run: async () => "ok" } }, async () => { throw new Error("Tab 9 is not in this session's window. Valid tab IDs: 5"); });
   await dispatch(call("look", { tabId: 9 }));
   assert.equal(sent[0].isError, true);
   assert.match(sent[0].content[0].text, /Valid tab IDs: 5/);
@@ -79,4 +80,19 @@ test("session_closed forgets the session and sends nothing", async () => {
   await dispatch({ type: "session_closed", sessionId: "gone" });
   assert.deepEqual(closed, ["gone"]);
   assert.deepEqual(sent, []);
+});
+
+test("the owned tab is made active before the tool runs", async () => {
+  const { dispatch, activated } = setup({ look: { tabScoped: true, run: async () => "ok" } });
+  await dispatch(call("look", { tabId: 5 }));
+  assert.deepEqual(activated, [5]);
+});
+
+test("tab changes are appended to results except tabs_context, which lists every tab", async () => {
+  const tools = { look: { tabScoped: false, run: async () => "ok" }, tabs_context: { tabScoped: false, run: async () => "{}" } };
+  const { dispatch, sent } = setup(tools, undefined, { changes: "Tabs changed: closed 3" });
+  await dispatch(call("look"));
+  await dispatch(call("tabs_context"));
+  assert.deepEqual(sent[0].content, [{ type: "text", text: "ok" }, { type: "text", text: "Tabs changed: closed 3" }]);
+  assert.deepEqual(sent[1].content, [{ type: "text", text: "{}" }]);
 });

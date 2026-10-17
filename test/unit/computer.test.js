@@ -62,11 +62,11 @@ test("cross-origin redirects are followed into the frame with local coordinates"
   assert.deepEqual(calls[1][2], { x: 5, y: 6, button: "left", count: 1, modifiers: "", guard: null });
 });
 
-test("links that would open a new tab are opened inside the session's group", async () => {
+test("links that would open a new tab open in the clicked tab's window", async () => {
   const { run, created, grouped } = setup({ "0:input.click": { opened: ["https://b.test/"], point: { x: 1, y: 2 } } });
   assert.equal(await run({ action: "left_click", ref: "ref_4" }), "Clicked ref_4 (link opened in new tab 51)");
   assert.deepEqual(created, [{ url: "https://b.test/", openerTabId: 1, windowId: 3, active: false }]);
-  assert.deepEqual(grouped, [{ groupId: 9, tabIds: [51] }]);
+  assert.deepEqual(grouped, []);
 });
 
 test("reload chords reload the tab and other keys report what was pressed", async () => {

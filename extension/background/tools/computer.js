@@ -73,7 +73,6 @@ export function computerTool({ api, content, capture, watch = watchNavigation })
       let text = `${verb} ${target.label}`;
       for (const url of result.opened ?? []) {
         const opened = await api.tabs.create({ url, openerTabId: tab.id, windowId: tab.windowId, active: false });
-        await api.tabs.group({ groupId: tab.groupId, tabIds: [opened.id] });
         text += ` (link opened in new tab ${opened.id})`;
       }
       return text;

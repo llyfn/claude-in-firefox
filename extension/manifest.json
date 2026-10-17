@@ -11,7 +11,7 @@
       "data_collection_permissions": { "required": ["websiteContent", "browsingActivity"] }
     }
   },
-  "permissions": ["nativeMessaging", "tabs", "tabGroups", "<all_urls>", "webRequest", "webNavigation", "clipboardWrite"],
+  "permissions": ["nativeMessaging", "tabs", "tabGroups", "sessions", "<all_urls>", "webRequest", "webNavigation", "clipboardWrite"],
   "background": { "page": "background/background.html", "persistent": true },
   "content_scripts": [
     {

@@ -1,129 +1,233 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { NO_GROUP_MESSAGE, createSessions } from "../../extension/background/sessions.js";
+import { NO_SESSION_MESSAGE, createSessions } from "../../extension/background/sessions.js";
 
-function fakeApi() {
+function fakeApi({ groups: groupsEnabled = true } = {}) {
   let nextTab = 1;
+  let nextWindow = 10;
   let nextGroup = 100;
   const tabs = new Map();
+  const windows = new Map();
   const groups = new Map();
+  const values = new Map();
   const copy = (t) => ({ ...t });
+  const addTab = (props) => {
+    const t = { id: nextTab++, title: "", groupId: -1, active: false, ...props };
+    tabs.set(t.id, t);
+    return t;
+  };
+  const addWindow = (props = {}) => {
+    const id = nextWindow++;
+    windows.set(id, { id, titlePreface: "", ...props });
+    return id;
+  };
   const api = {
     windows: {
-      getLastFocused: async () => ({ id: 1 }),
-      create: async ({ url }) => { const t = { id: nextTab++, windowId: 2, url, title: "", groupId: -1 }; tabs.set(t.id, t); return { id: 2, tabs: [copy(t)] }; },
+      create: async ({ url, focused }) => {
+        const id = addWindow({ focused });
+        return { id, tabs: [copy(addTab({ windowId: id, url, active: true }))] };
+      },
+      get: async (id) => {
+        if (!windows.has(id)) throw new Error(`Invalid window ID: ${id}`);
+        return { ...windows.get(id) };
+      },
+      getAll: async () => [...windows.values()].map((w) => ({ ...w })),
+      update: async (id, props) => { Object.assign(windows.get(id), props); },
+    },
+    sessions: {
+      setWindowValue: async (id, key, value) => { values.set(`${id}:${key}`, structuredClone(value)); },
+      getWindowValue: async (id, key) => structuredClone(values.get(`${id}:${key}`)),
+      removeWindowValue: async (id, key) => { values.delete(`${id}:${key}`); },
     },
     tabs: {
-      create: async ({ windowId = 1, url, openerTabId }) => { const t = { id: nextTab++, windowId, url, title: "", groupId: -1, openerTabId }; tabs.set(t.id, t); return copy(t); },
-      get: async (id) => { if (!tabs.has(id)) throw new Error(`Invalid tab ID: ${id}`); return copy(tabs.get(id)); },
-      query: async ({ groupId }) => [...tabs.values()].filter((t) => t.groupId === groupId).map(copy),
+      create: async ({ windowId, url, active = true, openerTabId }) => copy(addTab({ windowId, url, active, openerTabId })),
+      get: async (id) => {
+        if (!tabs.has(id)) throw new Error(`Invalid tab ID: ${id}`);
+        return copy(tabs.get(id));
+      },
+      query: async ({ windowId }) => [...tabs.values()].filter((t) => t.windowId === windowId).map(copy),
       group: async ({ tabIds, groupId }) => {
-        if (groupId != null && !groups.has(groupId)) throw new Error(`No group with id: ${groupId}`);
+        if (!groupsEnabled) throw new Error("Tab groups are disabled");
+        const ids = [].concat(tabIds);
         const id = groupId ?? nextGroup++;
-        if (!groups.has(id)) groups.set(id, { title: "", color: "" });
-        for (const tabId of [].concat(tabIds)) tabs.get(tabId).groupId = id;
+        if (!groups.has(id)) groups.set(id, { title: "", color: "", windowId: tabs.get(ids[0]).windowId });
+        for (const tabId of ids) tabs.get(tabId).groupId = id;
         return id;
       },
-      remove: async (id) => {
-        const { groupId } = tabs.get(id);
-        tabs.delete(id);
-        if (![...tabs.values()].some((t) => t.groupId === groupId)) groups.delete(groupId);
-      },
+      update: async (id, props) => { Object.assign(tabs.get(id), props); },
     },
     tabGroups: {
-      get: async (id) => { if (!groups.has(id)) throw new Error(`No group with id: ${id}`); return { id, ...groups.get(id) }; },
       update: async (id, props) => { Object.assign(groups.get(id), props); },
+      query: async ({ windowId }) => [...groups.entries()].filter(([, g]) => g.windowId === windowId).map(([id, g]) => ({ id, ...g })),
     },
   };
-  return { api, tabs, groups };
+  const closeWindow = (id) => {
+    windows.delete(id);
+    for (const t of [...tabs.values()]) if (t.windowId === id) tabs.delete(t.id);
+  };
+  return { api, tabs, windows, groups, values, addTab, addWindow, closeWindow };
 }
 
-test("context is null until the group is created on request", async () => {
+const ID = "abcd1234-0000-4000-8000-000000000000";
+
+test("context is null until the window is created on request", async () => {
   const sessions = createSessions(fakeApi().api);
-  assert.equal(await sessions.context("abcd-1"), null);
+  assert.equal(await sessions.context(ID), null);
 });
 
-test("createIfEmpty creates one blank background tab in a titled, colored group, once", async () => {
-  const { api, groups } = fakeApi();
+test("createIfEmpty opens one unfocused window with a blank tab, labelled and remembered on the window", async () => {
+  const { api, windows, groups, values } = fakeApi();
   const sessions = createSessions(api);
-  const ctx = await sessions.context("abcd-1234", { createIfEmpty: true });
-  assert.deepEqual(ctx.availableTabs, [{ tabId: 1, title: "", url: "about:blank" }]);
-  assert.deepEqual(groups.get(ctx.tabGroupId), { title: "Claude · abcd", color: "orange" });
-  assert.equal((await sessions.context("abcd-1234", { createIfEmpty: true })).availableTabs.length, 1);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  assert.deepEqual(ctx, { availableTabs: [{ tabId: 1, title: "", url: "about:blank" }], windowId: 10 });
+  assert.equal(windows.get(10).focused, false);
+  assert.equal(windows.get(10).titlePreface, "Claude · abcd1234 — ");
+  assert.deepEqual([...groups.values()].map((g) => [g.title, g.color]), [["Claude · abcd1234", "orange"]]);
+  assert.deepEqual(values.get("10:claudeSession"), { sessionId: ID, role: "main", stopped: false });
+  assert.equal((await sessions.context(ID, { createIfEmpty: true })).availableTabs.length, 1);
+  assert.equal(windows.size, 1);
 });
 
-test("concurrent createIfEmpty calls create only one group", async () => {
-  const { api, tabs, groups } = fakeApi();
+test("concurrent createIfEmpty calls open only one window", async () => {
+  const { api, windows } = fakeApi();
   const sessions = createSessions(api);
-  const [a, b] = await Promise.all([
-    sessions.context("s", { createIfEmpty: true }),
-    sessions.context("s", { createIfEmpty: true }),
-  ]);
-  assert.equal(a.tabGroupId, b.tabGroupId);
-  assert.equal(groups.size, 1);
-  assert.equal(tabs.size, 1);
+  const [a, b] = await Promise.all([sessions.context(ID, { createIfEmpty: true }), sessions.context(ID, { createIfEmpty: true })]);
+  assert.equal(a.windowId, b.windowId);
+  assert.equal(windows.size, 1);
 });
 
-test("each session gets its own group and color", async () => {
-  const { api, groups } = fakeApi();
+test("sessions work when tab groups are disabled", async () => {
+  const { api, windows } = fakeApi({ groups: false });
   const sessions = createSessions(api);
-  const a = await sessions.context("aaaa", { createIfEmpty: true });
-  const b = await sessions.context("bbbb", { createIfEmpty: true });
-  assert.notEqual(a.tabGroupId, b.tabGroupId);
-  assert.notEqual(groups.get(a.tabGroupId).color, groups.get(b.tabGroupId).color);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  assert.equal(windows.get(ctx.windowId).titlePreface, "Claude · abcd1234 — ");
+  const tab = await sessions.createTab(ID);
+  assert.equal((await sessions.ownedTab(ID, tab.id)).id, tab.id);
 });
 
-test("ownedTab accepts members and rejects other tabs with the valid IDs", async () => {
-  const { api } = fakeApi();
+test("ownedTab accepts any tab in the session's window and rejects others with the valid IDs", async () => {
+  const { api, addTab, addWindow } = fakeApi();
   const sessions = createSessions(api);
-  const ctx = await sessions.context("s", { createIfEmpty: true });
-  const stranger = await api.tabs.create({ url: "https://other.test/" });
-  assert.equal((await sessions.ownedTab("s", ctx.availableTabs[0].tabId)).id, ctx.availableTabs[0].tabId);
-  await assert.rejects(sessions.ownedTab("s", stranger.id), new RegExp(`Tab ${stranger.id} is not in this session's tab group. Valid tab IDs: 1`));
-  await assert.rejects(sessions.ownedTab("s", 999), /Tab 999 is not in this session's tab group/);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const userAdded = addTab({ windowId: ctx.windowId, url: "https://mine.test/" });
+  const stranger = addTab({ windowId: addWindow(), url: "https://other.test/" });
+  assert.equal((await sessions.ownedTab(ID, userAdded.id)).id, userAdded.id);
+  await assert.rejects(sessions.ownedTab(ID, stranger.id), { message: `Tab ${stranger.id} is not in this session's window. Valid tab IDs: 1, ${userAdded.id}` });
+  await assert.rejects(sessions.ownedTab(ID, 999), /Tab 999 is not in this session's window/);
 });
 
-test("calls before a group exists explain how to create one", async () => {
+test("calls before a window exists explain how to create one", async () => {
   const sessions = createSessions(fakeApi().api);
-  await assert.rejects(sessions.ownedTab("s", 1), { message: NO_GROUP_MESSAGE });
-  await assert.rejects(sessions.createTab("s"), { message: NO_GROUP_MESSAGE });
+  await assert.rejects(sessions.ownedTab(ID, 1), { message: NO_SESSION_MESSAGE });
+  await assert.rejects(sessions.createTab(ID), { message: NO_SESSION_MESSAGE });
 });
 
-test("createTab adds a blank background tab to the session's group", async () => {
-  const { api } = fakeApi();
+test("createTab opens an active tab in the session's window and group", async () => {
+  const { api, tabs } = fakeApi();
   const sessions = createSessions(api);
-  const ctx = await sessions.context("s", { createIfEmpty: true });
-  const tab = await sessions.createTab("s");
-  assert.equal((await api.tabs.get(tab.id)).groupId, ctx.tabGroupId);
-  assert.equal((await sessions.context("s")).availableTabs.length, 2);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const tab = await sessions.createTab(ID);
+  assert.equal(tab.windowId, ctx.windowId);
+  assert.equal(tab.active, true);
+  assert.equal(tabs.get(tab.id).groupId, tabs.get(1).groupId);
 });
 
-test("a group the user removed is forgotten", async () => {
-  const { api } = fakeApi();
+test("activate makes an inactive tab the active tab of its window", async () => {
+  const { api, tabs } = fakeApi();
   const sessions = createSessions(api);
-  const ctx = await sessions.context("s", { createIfEmpty: true });
-  await api.tabs.remove(ctx.availableTabs[0].tabId);
-  assert.equal(await sessions.context("s"), null);
-  await assert.rejects(sessions.ownedTab("s", ctx.availableTabs[0].tabId), { message: NO_GROUP_MESSAGE });
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const other = await api.tabs.create({ windowId: ctx.windowId, url: "https://x.test/", active: false });
+  await sessions.activate(other);
+  assert.equal(tabs.get(other.id).active, true);
 });
 
-test("tabs opened from a session tab join its group and other tabs are left alone", async () => {
-  const { api } = fakeApi();
+test("closing the main window forgets the session", async () => {
+  const { api, closeWindow } = fakeApi();
   const sessions = createSessions(api);
-  const ctx = await sessions.context("s", { createIfEmpty: true });
-  const child = await api.tabs.create({ url: "https://x.test/", openerTabId: ctx.availableTabs[0].tabId });
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  closeWindow(ctx.windowId);
+  sessions.windowRemoved(ctx.windowId);
+  assert.equal(await sessions.context(ID), null);
+  await assert.rejects(sessions.ownedTab(ID, 1), { message: NO_SESSION_MESSAGE });
+  const again = await sessions.context(ID, { createIfEmpty: true });
+  assert.notEqual(again.windowId, ctx.windowId);
+});
+
+test("a reloaded background recovers the session, its stop state and its group from window values", async () => {
+  const { api, tabs } = fakeApi();
+  const first = createSessions(api);
+  const ctx = await first.context(ID, { createIfEmpty: true });
+  await first.setStopped(ID, true);
+  const second = createSessions(api);
+  assert.deepEqual((await second.context(ID)).windowId, ctx.windowId);
+  assert.equal(await second.isStopped(ID), true);
+  const tab = await second.createTab(ID);
+  assert.equal(tabs.get(tab.id).groupId, tabs.get(1).groupId);
+  assert.equal(await second.sessionOfTab(tabs.get(1)), ID);
+});
+
+test("popup windows opened from a session tab join the session, and other tabs are left alone", async () => {
+  const { api, addTab, addWindow, values } = fakeApi();
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const popupWindow = addWindow({ type: "popup" });
+  const popup = addTab({ windowId: popupWindow, url: "https://login.test/", openerTabId: 1 });
+  await sessions.adoptOpened(popup);
+  assert.equal((await sessions.ownedTab(ID, popup.id)).id, popup.id);
+  assert.deepEqual(values.get(`${popupWindow}:claudeSession`), { sessionId: ID, role: "popup", stopped: false });
+  const userWindow = addWindow();
+  addTab({ windowId: userWindow, url: "https://mine.test/" });
+  const strayed = addTab({ windowId: userWindow, url: "https://x.test/", openerTabId: 1 });
+  await sessions.adoptOpened(strayed);
+  await assert.rejects(sessions.ownedTab(ID, strayed.id), /is not in this session's window/);
+  const outsider = addTab({ windowId: userWindow, url: "https://y.test/" });
+  const child = addTab({ windowId: ctx.windowId + 100, url: "https://z.test/", openerTabId: outsider.id });
   await sessions.adoptOpened(child);
-  assert.equal((await api.tabs.get(child.id)).groupId, ctx.tabGroupId);
-  const outsider = await api.tabs.create({ url: "https://y.test/" });
-  const grandchild = await api.tabs.create({ url: "https://z.test/", openerTabId: outsider.id });
-  await sessions.adoptOpened(grandchild);
-  assert.equal((await api.tabs.get(grandchild.id)).groupId, -1);
+  assert.equal(await sessions.sessionOfTab(child), null);
 });
 
-test("close forgets the session", async () => {
-  const { api } = fakeApi();
+test("tabs opened in the session's window from a session tab join its group", async () => {
+  const { api, addTab, tabs } = fakeApi();
   const sessions = createSessions(api);
-  await sessions.context("s", { createIfEmpty: true });
-  sessions.close("s");
-  assert.equal(await sessions.context("s"), null);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const child = addTab({ windowId: ctx.windowId, url: "https://x.test/", openerTabId: 1 });
+  await sessions.adoptOpened(child);
+  assert.equal(tabs.get(child.id).groupId, tabs.get(1).groupId);
+});
+
+test("status and stop state change the label, and a stopped session keeps the stopped label", async () => {
+  const { api, windows, groups, values } = fakeApi();
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const group = () => [...groups.values()][0].title;
+  await sessions.setStatus(ID, "busy");
+  assert.equal(group(), "⌛ Claude · abcd1234");
+  assert.equal(windows.get(ctx.windowId).titlePreface, "⌛ Claude · abcd1234 — ");
+  await sessions.setStopped(ID, true);
+  assert.equal(group(), "⏸ Claude · abcd1234");
+  assert.equal(values.get(`${ctx.windowId}:claudeSession`).stopped, true);
+  await sessions.setStatus(ID, "idle");
+  assert.equal(group(), "⏸ Claude · abcd1234");
+  await sessions.setStopped(ID, false);
+  assert.equal(group(), "✅ Claude · abcd1234");
+});
+
+test("tab changes since the last report are described once", async () => {
+  const { api, addTab, tabs } = fakeApi();
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  assert.equal(await sessions.tabChanges(ID), "");
+  const opened = addTab({ windowId: ctx.windowId, url: "https://x.test/", title: "X" });
+  tabs.delete(1);
+  assert.equal(await sessions.tabChanges(ID), `Tabs changed: opened ${opened.id} "X" https://x.test/; closed 1`);
+  assert.equal(await sessions.tabChanges(ID), "");
+});
+
+test("close forgets the session and clears its window values", async () => {
+  const { api, values } = fakeApi();
+  const sessions = createSessions(api);
+  await sessions.context(ID, { createIfEmpty: true });
+  await sessions.close(ID);
+  assert.equal(values.size, 0);
+  assert.equal(await sessions.context(ID), null);
 });
