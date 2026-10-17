@@ -19,15 +19,27 @@ const COUNT_FRAMES = `(() => {
   return [frames.length, navigating.length];
 })()`;
 
-// Out-of-process iframes register their frame ids after the top-level load event, and can still show the initial about:blank then, where nothing can be injected.
+// The content router answers every op, unknown ones with an error, once the frame's content scripts run.
+const answers = (api, tabId, frameId) => Promise.race([
+  api.tabs.sendMessage(tabId, { op: "ping" }, { frameId }).then(() => true, () => false),
+  new Promise((resolve) => setTimeout(resolve, 250, false)),
+]);
+
+// Out-of-process iframes register their frame ids after the top-level load event, can still show the initial about:blank then,
+// and once loaded, can take a moment before their content scripts listen. Until then nothing can be injected into them.
 export async function framesSettled(api, tabId) {
   const counted = await api.tabs.executeScript(tabId, { frameId: 0, code: COUNT_FRAMES }).catch(() => null);
   const [expected, navigating] = counted?.[0] ?? [];
   if (!(expected > 0)) return;
-  for (let waited = 0; waited < 1000; waited += 50) {
+  for (const end = Date.now() + 1000; Date.now() < end;) {
     const frames = await api.webNavigation.getAllFrames({ tabId }).catch(() => null);
     const children = frames?.filter((f) => f.parentFrameId === 0);
-    if (!children || (children.length >= expected && children.filter((f) => f.url !== "about:blank").length >= navigating)) return;
+    if (!children) return;
+    if (children.length >= expected) {
+      const loaded = children.filter((f) => f.url !== "about:blank");
+      const ready = await Promise.all(loaded.map((f) => answers(api, tabId, f.frameId)));
+      if (ready.filter(Boolean).length >= navigating) return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }

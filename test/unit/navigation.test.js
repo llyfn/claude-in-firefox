@@ -127,7 +127,7 @@ test("a tab that closes itself without navigating reports that it closed", async
 test("framesSettled waits until the child frame is registered", async () => {
   const polls = [[{ frameId: 0, parentFrameId: -1 }], [{ frameId: 0, parentFrameId: -1 }, { frameId: 7, parentFrameId: 0 }]];
   let calls = 0;
-  const api = { tabs: { executeScript: async () => [[1, 1]] }, webNavigation: { getAllFrames: async () => polls[Math.min(calls++, polls.length - 1)] } };
+  const api = { tabs: { executeScript: async () => [[1, 1]], sendMessage: async () => ({}) }, webNavigation: { getAllFrames: async () => polls[Math.min(calls++, polls.length - 1)] } };
   await framesSettled(api, 1);
   assert.equal(calls, 2);
 });

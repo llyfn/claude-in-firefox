@@ -6,12 +6,14 @@ import { framesSettled } from "../../extension/background/navigation.js";
 
 const top = { frameId: 0, parentFrameId: -1 };
 const child = { frameId: 7, parentFrameId: 0 };
+const loaded = { ...child, url: "http://b.test/inner.html" };
+const answers = async () => ({ error: "Unknown content op ping" });
 
 test("framesSettled waits until the child frame is registered", async () => {
   const polls = [[top], [top], [top, child]];
   let calls = 0;
   const api = {
-    tabs: { executeScript: async () => [[1, 1]] },
+    tabs: { executeScript: async () => [[1, 1]], sendMessage: answers },
     webNavigation: { getAllFrames: async () => polls[Math.min(calls++, polls.length - 1)] },
   };
   await framesSettled(api, 1);
@@ -19,20 +21,51 @@ test("framesSettled waits until the child frame is registered", async () => {
 });
 
 test("framesSettled waits until a child frame that is navigating leaves the initial about:blank", async () => {
-  const polls = [[top, { ...child, url: "about:blank" }], [top, { ...child, url: "about:blank" }], [top, { ...child, url: "http://b.test/inner.html" }]];
+  const polls = [[top, { ...child, url: "about:blank" }], [top, { ...child, url: "about:blank" }], [top, loaded]];
   let calls = 0;
   const api = {
-    tabs: { executeScript: async () => [[1, 1]] },
+    tabs: { executeScript: async () => [[1, 1]], sendMessage: answers },
     webNavigation: { getAllFrames: async () => polls[Math.min(calls++, polls.length - 1)] },
   };
   await framesSettled(api, 1);
   assert.equal(calls, 3);
 });
 
+test("framesSettled waits until the content scripts of a loaded child frame answer", async () => {
+  const pinged = [];
+  let listening = false;
+  const api = {
+    tabs: {
+      executeScript: async () => [[1, 1]],
+      sendMessage: async (tabId, msg, { frameId }) => {
+        pinged.push(frameId);
+        if (!listening) {
+          listening = pinged.length === 2;
+          throw new Error("Could not establish connection. Receiving end does not exist.");
+        }
+        return { error: `Unknown content op ${msg.op}` };
+      },
+    },
+    webNavigation: { getAllFrames: async () => [top, loaded] },
+  };
+  await framesSettled(api, 1);
+  assert.deepEqual(pinged, [7, 7, 7]);
+});
+
+test("framesSettled gives up on a child frame that never answers within its second", { timeout: 5000 }, async () => {
+  const api = {
+    tabs: { executeScript: async () => [[1, 1]], sendMessage: () => new Promise(() => {}) },
+    webNavigation: { getAllFrames: async () => [top, loaded] },
+  };
+  const started = Date.now();
+  await framesSettled(api, 1);
+  assert.ok(Date.now() - started < 1500, `framesSettled took ${Date.now() - started} ms`);
+});
+
 test("framesSettled does not wait for a child frame that stays blank", async () => {
   let calls = 0;
   const api = {
-    tabs: { executeScript: async () => [[1, 0]] },
+    tabs: { executeScript: async () => [[1, 0]], sendMessage: answers },
     webNavigation: { getAllFrames: async () => { calls++; return [top, { ...child, url: "about:blank" }]; } },
   };
   await framesSettled(api, 1);
