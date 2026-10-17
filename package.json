@@ -1,6 +1,6 @@
 {
   "name": "@llyfn/claude-in-firefox",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Drive Firefox from Claude Code and other MCP clients",
   "license": "MIT",
   "type": "module",
