@@ -1,15 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { Decoder, FIREFOX_SPLIT_THRESHOLD, encode } from "../../host/src/framing.js";
 import { startNativeHost } from "../../host/src/native-host.js";
+import { tempAddress } from "./helpers/address.js";
 
-// Unix socket paths are limited to about 104 bytes, which macOS's os.tmpdir() leaves too little of.
-const tempAddress = () => (process.platform === "win32" ? `\\\\.\\pipe\\cfb-test-${randomBytes(8).toString("hex")}` : path.join(fs.mkdtempSync("/tmp/cfb-test-"), "sock", "bridge.sock"));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function messageQueue(stream) {
@@ -29,7 +27,7 @@ function messageQueue(stream) {
 async function startHost() {
   const input = new PassThrough();
   const output = new PassThrough();
-  const socketPath = tempAddress();
+  const socketPath = tempAddress("sock");
   const host = await startNativeHost({ input, output, address: socketPath });
   return { input, socketPath, host, fromHost: messageQueue(output) };
 }
@@ -110,7 +108,7 @@ test("calls larger than the Firefox limit arrive as parts", async (t) => {
 });
 
 test("the socket is private and a stale socket file is replaced", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async (t) => {
-  const socketPath = tempAddress();
+  const socketPath = tempAddress("sock");
   fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(socketPath, "");
   const host = await startNativeHost({ input: new PassThrough(), output: new PassThrough(), address: socketPath });

@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -8,11 +7,10 @@ import path from "node:path";
 import { encode, onMessages } from "../../host/src/framing.js";
 import { BridgeClient, NOT_CONNECTED_MESSAGE, callTool } from "../../host/src/mcp-server.js";
 import { TOOLS } from "../../host/src/tools.js";
+import { tempAddress } from "./helpers/address.js";
 
 const ok = (text) => ({ content: [{ type: "text", text }], isError: false });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-// Unix socket paths are limited to about 104 bytes, which macOS's os.tmpdir() leaves too little of.
-const tempAddress = () => (process.platform === "win32" ? `\\\\.\\pipe\\cfb-test-${randomBytes(8).toString("hex")}` : path.join(fs.mkdtempSync("/tmp/cfb-mcp-"), "bridge.sock"));
 
 function fakeBridge(handler) {
   const calls = [];
