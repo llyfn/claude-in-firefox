@@ -145,6 +145,6 @@
       }
     }, page.console, { defineAs: level });
   }
-  window.addEventListener("error", (event) => record("exception", `${event.message} (${event.filename}:${event.lineno}:${event.colno})${event.error ? stackOf(event.error) : ""}`));
+  window.addEventListener("error", (event) => record("exception", `${event.message} (${event.filename}:${event.lineno}:${event.colno})${isError(event.error) ? stackOf(event.error) : ""}`));
   window.addEventListener("unhandledrejection", (event) => record("exception", `Unhandled promise rejection: ${format(event.reason)}`));
 })();
