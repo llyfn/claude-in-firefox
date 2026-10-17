@@ -48,7 +48,7 @@ The package lives at `<appDir>/node_modules/@llyfn/claude-in-firefox` (`pkgDir`)
 3. **Wrapper** in `appDir`, using the first `node` (`node.exe` on Windows) on PATH, else `process.execPath`:
    - macOS/Linux `native-host`: `#!/bin/sh` + `exec "<node>" "<pkgDir>/host/src/native-host.js" "$@"`, mode 0755.
    - Windows `native-host.cmd`: `@echo off` + `"<node>" "<pkgDir>\host\src\native-host.js" %*`, CRLF line endings.
-4. **Windows pipe name.** If `<appDir>\pipe-name` does not exist, write `\\.\pipe\claude-firefox-bridge-<32 random hex chars>` to it; an existing file is kept.
+4. **Windows pipe name and key.** Unless `<appDir>\pipe-name` holds a valid name, write `\\.\pipe\claude-firefox-bridge-<32 random hex chars>` to it. Unless `<appDir>\pipe-key` holds 64 lowercase hex chars, write 32 random bytes as hex to it. Valid files are kept.
 5. **Native messaging manifest** `{ name: "claude_firefox_bridge", description: "Claude Code Bridge for Firefox", path: <wrapper>, type: "stdio", allowed_extensions: ["claude-firefox-bridge@local"] }`:
    - macOS: `~/Library/Application Support/Mozilla/NativeMessagingHosts/claude_firefox_bridge.json`
    - Linux: `~/.mozilla/native-messaging-hosts/claude_firefox_bridge.json`
@@ -68,9 +68,14 @@ Unless `--no-claude`, when `claude` is on PATH: `claude mcp remove --scope user 
 - `bridgeAddress({ platform, appDir })` in `paths.js`:
   - macOS/Linux: `/tmp/claude-firefox-bridge-<uid>/bridge.sock`, unchanged, with the existing directory checks.
   - Windows: the contents of `<appDir>\pipe-name`. A missing file is an error that says to run `claude-firefox install`.
-- Windows has no equivalent of the socket directory's 0700 permissions, and Node cannot set a named pipe's access list. The default pipe permissions grant everyone read access, and any local user could create a known pipe name first and pose as the host. The unguessable name, kept in a file only the user (plus SYSTEM and administrators) can read, prevents both.
+- `bridgeKey({ platform, appDir })` in `paths.js`: `null` on macOS/Linux; on Windows the contents of `<appDir>\pipe-key`, and a missing or malformed file is an error that says to run install.
+- Windows has no equivalent of the socket directory's 0700 permissions, and Node cannot set a named pipe's access list. Pipe names are not secret: any local user can list them (`Get-ChildItem \\.\pipe\`). The default pipe access list gives other users read access only, so they cannot send calls to the host. Any local user can, however, create a pipe with the bridge's name while the host is down and pose as the host, receiving the MCP server's calls (typed text, URLs, uploaded files) and answering them. The key handshake stops that:
+  - `<appDir>\pipe-key` holds 32 random bytes as hex, readable only by the user (plus SYSTEM and administrators).
+  - The MCP server sends `hello { sessionId, nonce }` with a fresh 32-byte random nonce. The native host answers `welcome { proof }`, where `proof` is HMAC-SHA256 of the nonce keyed with the key (`bridgeProof` in `framing.js`).
+  - The MCP server compares the proof in constant time and writes no call until it matches. A wrong or missing proof, a closed connection, or no welcome within 5 s destroys the connection and fails the call with a message saying that the pipe's server could not prove it holds the key in `pipe-key`.
+  - Residual risk: Node cannot set the client's impersonation level, so a squatting server that holds SeImpersonatePrivilege (administrators, service accounts) could still impersonate the user when the MCP server connects.
 - Native host on Windows: no directory checks, `chmod`, or stale-socket cleanup (pipes disappear with their process). `EADDRINUSE` reports `Another native host is already serving <address>`.
-- MCP server on Windows: no directory verification; a missing pipe-name file or a refused connection gives the existing not-connected message, which also mentions `claude-firefox install`.
+- MCP server on Windows: no directory verification; a missing pipe-name or pipe-key file or a refused connection gives the existing not-connected message, which also mentions `claude-firefox install`.
 
 ## 6. CI and release
 
