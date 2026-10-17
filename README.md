@@ -7,27 +7,46 @@ Drive your everyday Firefox from Claude Code. A Firefox extension plus a local M
 ## How it works
 
 ```
-Claude Code ──MCP stdio──▶ host/src/mcp-server.js ──unix socket──▶ native-host.js ──native messaging──▶ extension
+MCP client ──starts──▶ claude-firefox mcp ──unix socket──▶ native-host.js ──native messaging──▶ extension
+               (host/src/cli.js mcp)       (named pipe on Windows)
 ```
 
 Each Claude Code session gets its own Firefox window, opened behind the Firefox window you are using, and can only touch tabs in that window (plus popups opened from it). The window title and, when tab groups are enabled, a tab group show the session's status: ⌛ working, ✅ idle, ⏸ stopped. A violet glow and a phantom cursor show which tab Claude is working in.
 
 The MCP server runs from this repository. The native host is the process Firefox launches, and it runs from a copy outside the repository (`~/Library/Application Support/claude-in-firefox/host/` on macOS, `~/.local/share/claude-in-firefox/host/` on Linux), because macOS privacy protection blocks processes that Firefox launches from reading `~/Desktop`, `~/Documents` and `~/Downloads`.
 
+Both halves run from one copy of the package that the installer puts in an app directory (`~/Library/Application Support/claude-in-firefox` on macOS, `~/.local/share/claude-in-firefox` on Linux, `%LOCALAPPDATA%\claude-in-firefox` on Windows). Firefox starts the native host from there through native messaging, and MCP clients start the MCP server from there. On Windows the two meet on a named pipe whose random name is kept in `pipe-name` in that directory, because Node cannot restrict a pipe to one user. Also on Windows, Firefox finds the native host through the registry key `HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge`.
+
 ## Requirements
 
-- macOS or Linux, Node ≥ 20 to run, Claude Code. On Linux, use a Firefox installed from Mozilla or your distribution's package; the Snap and Flatpak builds keep native-messaging hosts elsewhere and are not supported.
+- macOS, Linux or Windows, with Node ≥ 20 on PATH.
 - Firefox 140 or newer. The signed add-on works in regular Firefox; unsigned development builds need Firefox Developer Edition or Nightly.
+- On Linux, use a Firefox installed from Mozilla or your distribution's package; the Snap and Flatpak builds keep native-messaging hosts elsewhere and are not supported.
 - Node ≥ 22.22 for development and tests (jsdom 30 requires it).
 
 ## Install
 
 1. Download the `.xpi` from the [latest release](https://github.com/llyfn/claude-in-firefox/releases/latest) and open it in Firefox to install the signed add-on.
-2. Clone this repository, then run `npm install` and `npm run install-host`. The installer copies the native host's runtime files (`native-host.js`, `framing.js`, `paths.js`, and a `package.json` with `"type": "module"`) into the host directory above, writes a `native-host` shell wrapper next to them, writes the native-messaging manifest `claude_firefox_bridge.json` (to `~/Library/Application Support/Mozilla/NativeMessagingHosts/` on macOS, `~/.mozilla/native-messaging-hosts/` on Linux) pointing at that wrapper, and prints a `claude mcp add` command.
-3. Run the printed `claude mcp add --scope user firefox -- …` command.
-4. Start a new Claude Code session and ask it to use the `firefox` tools. It should begin with `tabs_context` and `createIfEmpty: true`.
+2. Run `npx @llyfn/claude-in-firefox install`. It installs the bridge, registers the native host with Firefox (a registry key on Windows), and registers the `firefox` MCP server with Claude Code when the `claude` command is available. Pass `--no-claude` to skip that.
+3. Start a new Claude Code session and ask it to use the `firefox` tools. It should begin with `tabs_context` and `createIfEmpty: true`.
 
-To update, install the `.xpi` from the newer release (the add-on does not update itself), `git pull`, and re-run `npm run install-host`, because Firefox runs a copy of the host. The MCP server always runs from the repository.
+## Update
+
+Run `npx @llyfn/claude-in-firefox@latest install`, and install the `.xpi` from the newer release (the add-on does not update itself).
+
+## Uninstall
+
+`npx @llyfn/claude-in-firefox uninstall` removes the Claude Code entry, the native-messaging registration and the app directory. Pass `--no-claude` to leave the Claude Code entry alone. Remove the add-on in `about:addons`.
+
+## Other MCP clients
+
+The installer prints a JSON block; add it to the client's MCP configuration. For Claude Desktop that file is `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS and `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
+
+```json
+{ "mcpServers": { "firefox": { "command": "<path to node>", "args": ["<app directory>/node_modules/@llyfn/claude-in-firefox/host/src/cli.js", "mcp"] } } }
+```
+
+Each client process is its own session with its own window.
 
 ## Tools
 
@@ -65,43 +84,47 @@ To update, install the `.xpi` from the newer release (the add-on does not update
 - Disabling, reloading or updating the add-on can break `console` and page dialogs in tabs that were already open; reload those tabs.
 - A dialog raised by a page's very first scripts, before the add-on has marked the tab as a session tab, appears normally and stalls that call until it times out.
 - Firefox opens every new window in front. When you are using Firefox, the add-on gives focus back to your window; when another app is in front, opening a session's window brings Firefox to the front.
+- Windows support is tested in CI with Firefox Developer Edition; report problems with other setups.
 - Updating to 0.2.0 asks for the new "sessions" permission, which stores each session's id on its window so sessions survive add-on reloads, and Firefox restarts that reopen your previous windows.
 
 ## Development
 
 ```bash
+npm install
 npm test          # unit tests (node:test + jsdom)
 npm run lint      # web-ext lint
 npm run e2e       # drives a real Firefox Developer Edition
+npm run install-host  # packs this clone and installs it like a release (add -- --no-claude to leave Claude Code alone)
 npm run build     # packages the extension into web-ext-artifacts/
 ```
 
 To run an unsigned build, open `about:config` in Firefox Developer Edition, set `xpinstall.signatures.required` to `false`, run `npm run build`, then open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/claude_code_bridge_for_firefox-<version>.zip`. Re-run `npm run install-host` after changes under `host/src`.
 
-Development and tests need Node ≥ 22.22. E2E needs Firefox Developer Edition and a prior `npm run install-host`. Do not run it while another Firefox instance has the add-on installed: only one native host can own the bridge socket.
+Development and tests need Node ≥ 22.22. E2E needs Firefox Developer Edition and a prior `npm run install-host -- --no-claude`. Do not run it while another Firefox instance has the add-on installed: only one native host can own the bridge socket.
 
-E2E uses `FIREFOX_BIN` if set, otherwise `/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox`; on Linux set `FIREFOX_BIN` to your Firefox Developer Edition binary. It also connects to Firefox over WebDriver BiDi on a free local port to press the Stop bar with real clicks.
+E2E uses `FIREFOX_BIN` if set, otherwise the default Developer Edition path on macOS and Windows; on Linux set `FIREFOX_BIN` to your Firefox Developer Edition binary. CI runs unit tests on Linux, macOS and Windows and e2e on Linux and Windows. It also connects to Firefox over WebDriver BiDi on a free local port to press the Stop bar with real clicks.
 
 Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`; sessions, Stop and dialogs: `docs/superpowers/specs/2026-10-17-session-control-design.md`.
 
 ## Releasing
 
-Releases are signed by addons.mozilla.org as an unlisted add-on (not shown in the add-ons store) and attached to a GitHub release by `.github/workflows/release.yml`.
+Releases are signed by addons.mozilla.org as an unlisted add-on (not shown in the add-ons store), published to npm as `@llyfn/claude-in-firefox`, and attached to a GitHub release by `.github/workflows/release.yml`.
 
 One-time setup:
 
 1. Create an addons.mozilla.org account and generate API credentials at <https://addons.mozilla.org/developers/addon/api/key/>.
 2. Store them as repository secrets: `gh secret set AMO_JWT_ISSUER` and `gh secret set AMO_JWT_SECRET`.
+3. Create an npm automation token for the `@llyfn` scope and store it with `gh secret set NPM_TOKEN`.
 
 For each release:
 
-1. Bump `version` in `extension/manifest.json` (and `package.json`). addons.mozilla.org refuses to sign a version it has already signed.
+1. Bump `version` in both `extension/manifest.json` and `package.json`. addons.mozilla.org refuses to sign a version it has already signed.
 2. Commit, then push a matching tag: `git tag v0.1.0 && git push origin v0.1.0`.
-3. The workflow checks that the tag matches the manifest version, runs the unit tests and lint, signs the add-on, and publishes the release with the signed `.xpi`.
+3. The workflow checks that the tag matches both versions, runs the unit tests and lint, signs the add-on, publishes `@llyfn/claude-in-firefox` to npm, and creates the GitHub release with the signed `.xpi`.
 
 ## Troubleshooting
 
-- **"Firefox extension not connected".** Firefox isn't running, the add-on isn't installed, or `npm run install-host` wasn't run. The Browser Console (⌘⇧J) shows native host errors prefixed `claude-firefox native host:`.
-- **Native host or MCP server stops starting after a Node upgrade.** The installer records the first `node` on `PATH`. After changing Node installations, re-run `npm run install-host` and update the `claude mcp add` entry with the command it prints.
+- **"Firefox extension not connected".** Firefox isn't running, the add-on isn't installed, or `npx @llyfn/claude-in-firefox install` wasn't run. On Windows, `pipe-name` must exist in the app directory. The Browser Console (⌘⇧J) shows native host errors prefixed `claude-firefox native host:`.
+- **Native host or MCP server stops starting after a Node upgrade.** The installer records the first `node` on `PATH`. After changing Node installations, re-run `npx @llyfn/claude-in-firefox install`, which rewrites the wrapper and the Claude Code entry with the current node.
 - **"Cannot access this page".** The page is one Firefox reserves (see Safety).
 - **Clicks land in the wrong place.** Take a fresh `screenshot` first: coordinates always refer to the most recent screenshot of that tab.
