@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createPresence } from "../../extension/background/presence.js";
 import { NO_SESSION_MESSAGE, createSessions } from "../../extension/background/sessions.js";
 
 function fakeApi({ groups: groupsEnabled = true, noGroupApi = false } = {}) {
@@ -356,4 +357,120 @@ test("sessions work when the tab group APIs are missing entirely", async () => {
   await sessions.setStatus(ID, "busy");
   assert.equal((await sessions.ownedTab(ID, tab.id)).windowId, ctx.windowId);
   assert.equal((await createSessions(api).context(ID)).windowId, ctx.windowId);
+});
+
+test("a restored window of a session no call has touched shows no pill and leaves dialogs native until a call arrives", async () => {
+  const { api, addTab } = fakeApi();
+  const ctx = await createSessions(api).context(ID, { createIfEmpty: true });
+  const restarted = createSessions(api);
+  const presence = createPresence({ api, content: { call: async () => {} }, sessions: restarted });
+  const userTab = addTab({ windowId: ctx.windowId, url: "https://bank.test/" });
+  assert.equal(await presence.stateFor(userTab), null);
+  assert.equal(await presence.dialogsEnabled(userTab), false);
+  await restarted.context(ID);
+  assert.equal(await presence.stateFor(userTab), "active");
+  assert.equal(await presence.dialogsEnabled(userTab), true);
+});
+
+test("a window carrying a session's value but not in its record belongs to no session", async () => {
+  const { api, addTab, addWindow, values } = fakeApi();
+  const sessions = createSessions(api);
+  const presence = createPresence({ api, content: { call: async () => {} }, sessions });
+  const old = await sessions.context(ID, { createIfEmpty: true });
+  sessions.windowRemoved(old.windowId);
+  await sessions.context(ID, { createIfEmpty: true });
+  const reopened = addWindow();
+  values.set(`${reopened}:claudeSession`, { sessionId: ID, role: "main", stopped: false });
+  const tab = addTab({ windowId: reopened, url: "https://x.test/" });
+  assert.equal(await sessions.sessionOfTab(tab), null);
+  assert.equal(await presence.stateFor(tab), null);
+});
+
+test("onLoaded fires once when a call creates the session and once when a reloaded background recovers it", async () => {
+  const { api } = fakeApi();
+  const loaded = [];
+  const first = createSessions(api, { onLoaded: (id) => loaded.push(["first", id]) });
+  await first.context(ID, { createIfEmpty: true });
+  await first.context(ID);
+  const second = createSessions(api, { onLoaded: (id) => loaded.push(["second", id]) });
+  await Promise.all([second.isStopped(ID), second.context(ID)]);
+  await second.ownedTab(ID, 1);
+  assert.deepEqual(loaded, [["first", ID], ["second", ID]]);
+});
+
+test("closing a session while its window is being created closes the new window's session too", async () => {
+  const { api, values, windows } = fakeApi();
+  const create = api.windows.create;
+  api.windows.create = async (props) => { await new Promise((resolve) => setTimeout(resolve, 20)); return create(props); };
+  const sessions = createSessions(api);
+  const opening = sessions.context(ID, { createIfEmpty: true });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const left = await sessions.close(ID);
+  const ctx = await opening;
+  assert.deepEqual(left.map((t) => t.id), [1]);
+  assert.equal(values.size, 0);
+  assert.equal(await sessions.sessionOfTab({ windowId: ctx.windowId }), null);
+  assert.equal(windows.get(ctx.windowId).titlePreface, "");
+});
+
+test("closing a session while a call recovers it leaves nothing behind", async () => {
+  const { api, values } = fakeApi();
+  const ctx = await createSessions(api).context(ID, { createIfEmpty: true });
+  const query = api.tabGroups.query;
+  let slow = true;
+  api.tabGroups.query = async (props) => {
+    if (slow) {
+      slow = false;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return query(props);
+  };
+  const reloaded = createSessions(api);
+  const call = reloaded.context(ID);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await reloaded.close(ID);
+  await call;
+  assert.equal(values.size, 0);
+  assert.equal(await reloaded.sessionOfTab({ windowId: ctx.windowId }), null);
+});
+
+test("close removes the label from the window and its group and reports the session's tabs", async () => {
+  const { api, windows, groups, addTab, addWindow } = fakeApi();
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const popupWindow = addWindow({ type: "popup" });
+  const popup = addTab({ windowId: popupWindow, url: "https://login.test/", openerTabId: 1 });
+  await sessions.adoptOpened(popup);
+  await sessions.setStatus(ID, "busy");
+  const left = await sessions.close(ID);
+  assert.equal(windows.get(ctx.windowId).titlePreface, "");
+  assert.equal([...groups.values()][0].title, "");
+  assert.deepEqual(left.map((t) => t.id).sort(), [1, popup.id]);
+});
+
+test("close cleans up a session this background never loaded", async () => {
+  const { api, values, windows } = fakeApi();
+  const ctx = await createSessions(api).context(ID, { createIfEmpty: true });
+  const loaded = [];
+  const reloaded = createSessions(api, { onLoaded: (id) => loaded.push(id) });
+  assert.deepEqual((await reloaded.close(ID)).map((t) => t.id), [1]);
+  assert.equal(values.size, 0);
+  assert.equal(windows.get(ctx.windowId).titlePreface, "");
+  assert.deepEqual(loaded, []);
+});
+
+test("closing the main window reports the popup tabs that left the session", async () => {
+  const { api, addTab, addWindow, closeWindow } = fakeApi();
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const popupWindow = addWindow({ type: "popup" });
+  const popup = addTab({ windowId: popupWindow, url: "https://login.test/", openerTabId: 1 });
+  await sessions.adoptOpened(popup);
+  const other = addWindow();
+  closeWindow(other);
+  assert.deepEqual(await sessions.windowRemoved(other), []);
+  closeWindow(ctx.windowId);
+  const left = await sessions.windowRemoved(ctx.windowId);
+  assert.deepEqual(left.map((t) => t.id), [popup.id]);
+  assert.equal(await sessions.sessionOfTab(left[0]), null);
 });

@@ -3,7 +3,7 @@ const KEY = "claudeSession";
 const STATUS_PREFIX = { new: "", busy: "⌛ ", idle: "✅ " };
 export const NO_SESSION_MESSAGE = "This session has no window yet. Call tabs_context with createIfEmpty: true first.";
 
-export function createSessions(api) {
+export function createSessions(api, { onLoaded = () => {} } = {}) {
   const records = new Map();
   const creating = new Map();
   const recovering = new Map();
@@ -39,7 +39,7 @@ export function createSessions(api) {
   }
 
   // Window values survive add-on reloads and Firefox restarts, unlike this background page's memory.
-  async function recover(sessionId) {
+  async function scan(sessionId) {
     const rec = newRecord(sessionId);
     for (const win of await api.windows.getAll()) {
       const value = await api.sessions.getWindowValue(win.id, KEY).catch(() => undefined);
@@ -53,8 +53,15 @@ export function createSessions(api) {
     const group = groups.find((g) => g.title?.endsWith(tagOf(sessionId)));
     rec.groupId = group?.id ?? null;
     rec.color = group?.color ?? null;
+    return rec;
+  }
+
+  async function recover(sessionId) {
+    const rec = await scan(sessionId);
+    if (!rec) return null;
     if (records.has(sessionId)) return records.get(sessionId);
     register(rec);
+    onLoaded(sessionId);
     return rec;
   }
 
@@ -91,6 +98,7 @@ export function createSessions(api) {
     await persist(rec, win.id).catch(() => {});
     rec.groupId = await groupCall(() => api.tabs.group({ tabIds: win.tabs.map((t) => t.id), createProperties: { windowId: win.id } })).catch(() => null);
     await applyLabel(rec);
+    onLoaded(sessionId);
     return rec;
   }
 
@@ -152,11 +160,9 @@ export function createSessions(api) {
       await persist(rec, tab.windowId).catch(() => {});
     },
 
+    // Only sessions a call has loaded count, so windows restored from a session that ended without session_closed stay inert.
     async sessionOfTab(tab) {
-      const rec = recordOfWindow(tab.windowId);
-      if (rec) return rec.id;
-      const value = await api.sessions.getWindowValue(tab.windowId, KEY).catch(() => undefined);
-      return value?.sessionId && (await find(value.sessionId)) ? value.sessionId : null;
+      return recordOfWindow(tab.windowId)?.id ?? null;
     },
 
     async sessionTabs(sessionId) {
@@ -195,19 +201,30 @@ export function createSessions(api) {
       return opened.length || closed.length ? `Tabs changed: ${[...opened, ...closed].join("; ")}` : "";
     },
 
-    windowRemoved(windowId) {
+    // Resolves to the tabs of popup windows that left the session with its main window.
+    async windowRemoved(windowId) {
+      const popups = [];
       for (const rec of [...records.values()]) {
         if (rec.main === windowId) {
           records.delete(rec.id);
-          for (const id of rec.windows) if (id !== windowId) api.sessions.removeWindowValue(id, KEY).catch(() => {});
+          for (const id of rec.windows) if (id !== windowId) popups.push(id);
         } else rec.windows.delete(windowId);
       }
+      for (const id of popups) api.sessions.removeWindowValue(id, KEY).catch(() => {});
+      const lists = await Promise.all(popups.map((id) => api.tabs.query({ windowId: id }).catch(() => [])));
+      return lists.flat();
     },
 
     async close(sessionId) {
-      const rec = records.get(sessionId);
+      await Promise.all([creating.get(sessionId), recovering.get(sessionId)].map((pending) => pending?.catch(() => {})));
+      const rec = records.get(sessionId) ?? (await scan(sessionId));
+      if (!rec) return [];
+      const tabs = await tabsOf(rec).catch(() => []);
+      for (const windowId of rec.windows) await api.sessions.removeWindowValue(windowId, KEY).catch(() => {});
       records.delete(sessionId);
-      if (rec) for (const windowId of rec.windows) await api.sessions.removeWindowValue(windowId, KEY).catch(() => {});
+      await api.windows.update(rec.main, { titlePreface: "" }).catch(() => {});
+      if (rec.groupId != null) await groupCall(() => api.tabGroups.update(rec.groupId, { title: "" })).catch(() => {});
+      return tabs;
     },
   };
 }

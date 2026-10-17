@@ -61,18 +61,15 @@ test("Stop takes effect before the slow persist finishes", async () => {
   await stopping;
 });
 
-test("close collects the tabs first, closes the session, aborts running calls and reports the tabs", async () => {
+test("close closes the session, aborts running calls and reports the tabs that left it", async () => {
   const { sessions } = fakeSessions();
-  const order = [];
-  sessions.sessionTabs = async () => { order.push("tabs"); return [{ id: 1 }]; };
-  sessions.close = async () => { order.push("close"); };
+  sessions.close = async () => [{ id: 1 }];
   let reported;
   const control = createControl({ sessions, onClosed: async (tabs) => { reported = tabs; }, idleAfterMs: 5 });
   const running = control.run("s", () => new Promise(() => {}));
   await tick();
   await control.close("s");
   await assert.rejects(running, { message: STOPPED_MESSAGE });
-  assert.deepEqual(order, ["tabs", "close"]);
   assert.deepEqual(reported, [{ id: 1 }]);
 });
 

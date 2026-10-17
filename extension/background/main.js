@@ -15,7 +15,7 @@ import { tabTools } from "./tools/tabs.js";
 
 const api = browser;
 const content = createContent(api);
-const sessions = createSessions(api);
+const sessions = createSessions(api, { onLoaded: (sessionId) => { presence.refreshSession(sessionId).catch(() => {}); } });
 const activity = createActivity({ api, content });
 const capture = createCapture({ api, content });
 const presence = createPresence({ api, content, sessions });
@@ -29,7 +29,9 @@ api.tabs.onCreated.addListener((tab) => {
   sessions.adoptOpened(tab).catch(() => {});
 });
 api.tabs.onRemoved.addListener((tabId) => dialogs.removeTab(tabId));
-api.windows.onRemoved.addListener((windowId) => sessions.windowRemoved(windowId));
+api.windows.onRemoved.addListener((windowId) => {
+  sessions.windowRemoved(windowId).then((tabs) => presence.refreshTabs(tabs)).catch(() => {});
+});
 api.runtime.onMessage.addListener((msg, sender) => {
   if (!sender.tab) return undefined;
   if (msg?.type === "dialog") {

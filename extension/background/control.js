@@ -69,8 +69,7 @@ export function createControl({ sessions, onChange = async () => {}, onClosed = 
     },
 
     async close(sessionId) {
-      const tabs = await sessions.sessionTabs(sessionId).catch(() => []);
-      await sessions.close(sessionId);
+      const tabs = await sessions.close(sessionId).catch(() => []);
       controllers.get(sessionId)?.abort();
       controllers.delete(sessionId);
       clearTimeout(idleTimers.get(sessionId));
