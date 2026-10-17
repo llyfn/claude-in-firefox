@@ -28,7 +28,7 @@ async function startHost() {
   const input = new PassThrough();
   const output = new PassThrough();
   const socketPath = tempSocketPath();
-  const host = await startNativeHost({ input, output, socketPath });
+  const host = await startNativeHost({ input, output, address: socketPath });
   return { input, socketPath, host, fromHost: messageQueue(output) };
 }
 
@@ -111,7 +111,7 @@ test("the socket is private and a stale socket file is replaced", async (t) => {
   const socketPath = tempSocketPath();
   fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(socketPath, "");
-  const host = await startNativeHost({ input: new PassThrough(), output: new PassThrough(), socketPath });
+  const host = await startNativeHost({ input: new PassThrough(), output: new PassThrough(), address: socketPath });
   t.after(() => host.close());
   assert.equal(fs.statSync(socketPath).mode & 0o777, 0o600);
   assert.equal(fs.statSync(path.dirname(socketPath)).mode & 0o777, 0o700);
@@ -120,7 +120,7 @@ test("the socket is private and a stale socket file is replaced", async (t) => {
 test("a second host refuses to start while the first is serving", async (t) => {
   const h = await startHost();
   t.after(() => h.host.close());
-  await assert.rejects(startNativeHost({ input: new PassThrough(), output: new PassThrough(), socketPath: h.socketPath }), /already serving/);
+  await assert.rejects(startNativeHost({ input: new PassThrough(), output: new PassThrough(), address: h.socketPath }), /already serving/);
 });
 
 test("Firefox closing stdin removes the socket", async () => {
@@ -128,4 +128,13 @@ test("Firefox closing stdin removes the socket", async () => {
   h.input.end();
   await sleep(20);
   assert.equal(fs.existsSync(h.socketPath), false);
+});
+
+test("with the Windows transport the host skips directory checks and reports a busy address", async (t) => {
+  const dir = fs.mkdtempSync("/tmp/cfb-win-");
+  fs.chmodSync(dir, 0o755);
+  const address = path.join(dir, "bridge.sock");
+  const first = await startNativeHost({ input: new PassThrough(), output: new PassThrough(), address, platform: "win32" });
+  t.after(() => first.close());
+  await assert.rejects(startNativeHost({ input: new PassThrough(), output: new PassThrough(), address, platform: "win32" }), { message: `Another native host is already serving ${address}` });
 });

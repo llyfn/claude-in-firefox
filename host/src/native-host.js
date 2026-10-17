@@ -3,11 +3,14 @@ import fsp from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { encode, onMessages, splitForFirefox } from "./framing.js";
-import { SOCKET_PATH, ensureSocketDir, isMain } from "./paths.js";
+import { bridgeAddress, ensureSocketDir, isMain } from "./paths.js";
 
-export async function startNativeHost({ input, output, socketPath }) {
-  await ensureSocketDir(path.dirname(socketPath));
-  await claimSocketPath(socketPath);
+export async function startNativeHost({ input, output, address, platform = process.platform }) {
+  const unix = platform !== "win32";
+  if (unix) {
+    await ensureSocketDir(path.dirname(address));
+    await claimSocketPath(address);
+  }
 
   const clients = new Map();
   let nextClientId = 1;
@@ -42,10 +45,10 @@ export async function startNativeHost({ input, output, socketPath }) {
   );
 
   await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(socketPath, resolve);
+    server.once("error", (err) => reject(err.code === "EADDRINUSE" ? new Error(`Another native host is already serving ${address}`) : err));
+    server.listen(address, resolve);
   });
-  await fsp.chmod(socketPath, 0o600);
+  if (unix) await fsp.chmod(address, 0o600);
 
   let closed = false;
   const close = () => {
@@ -53,7 +56,7 @@ export async function startNativeHost({ input, output, socketPath }) {
     closed = true;
     server.close();
     for (const { socket } of clients.values()) socket.destroy();
-    fs.rmSync(socketPath, { force: true });
+    if (unix) fs.rmSync(address, { force: true });
   };
   input.on("end", close);
   return { close };
@@ -72,7 +75,7 @@ async function claimSocketPath(socketPath) {
 
 if (isMain(import.meta.url)) {
   try {
-    const host = await startNativeHost({ input: process.stdin, output: process.stdout, socketPath: SOCKET_PATH });
+    const host = await startNativeHost({ input: process.stdin, output: process.stdout, address: bridgeAddress() });
     process.stdin.on("end", () => process.exit(0));
     process.on("SIGTERM", () => { host.close(); process.exit(0); });
   } catch (err) {

@@ -7,13 +7,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { coerceArgs } from "./coerce.js";
 import { encode, onMessages } from "./framing.js";
-import { SOCKET_PATH, isMain, verifySocketDir } from "./paths.js";
+import { PACKAGE_VERSION, bridgeAddress, isMain, verifySocketDir } from "./paths.js";
 import { TOOLS, TOOL_BY_NAME } from "./tools.js";
 
 export const CALL_TIMEOUT_MS = 30_000;
 export const BATCH_TIMEOUT_MS = 90_000;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-export const NOT_CONNECTED_MESSAGE = "Firefox extension not connected — is Firefox running with the Claude Code Bridge for Firefox add-on installed?";
+export const NOT_CONNECTED_MESSAGE = "Firefox extension not connected — is Firefox running with the Claude Code Bridge for Firefox add-on installed, and has `npx @llyfn/claude-in-firefox install` been run?";
 
 const MIME_TYPES = {
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
@@ -21,14 +21,16 @@ const MIME_TYPES = {
 };
 
 export class BridgeClient {
-  #socketPath;
+  #address;
+  #platform;
   #socket = null;
   #connecting = null;
   #pending = new Map();
   #nextId = 1;
 
-  constructor({ socketPath, sessionId }) {
-    this.#socketPath = socketPath;
+  constructor({ address, sessionId, platform = process.platform }) {
+    this.#address = typeof address === "function" ? address : () => address;
+    this.#platform = platform;
     this.sessionId = sessionId;
   }
 
@@ -59,12 +61,20 @@ export class BridgeClient {
   }
 
   async #open() {
+    let address;
     try {
-      await verifySocketDir(path.dirname(this.#socketPath));
+      address = this.#address();
     } catch (err) {
-      throw new Error(err.code === "ENOENT" ? NOT_CONNECTED_MESSAGE : err.message);
+      throw new Error(`${NOT_CONNECTED_MESSAGE} (${err.message})`);
     }
-    const socket = net.connect(this.#socketPath);
+    if (this.#platform !== "win32") {
+      try {
+        await verifySocketDir(path.dirname(address));
+      } catch (err) {
+        throw new Error(err.code === "ENOENT" ? NOT_CONNECTED_MESSAGE : err.message);
+      }
+    }
+    const socket = net.connect(address);
     await new Promise((resolve, reject) => {
       socket.once("connect", resolve);
       socket.once("error", () => reject(new Error(NOT_CONNECTED_MESSAGE)));
@@ -143,7 +153,7 @@ async function withFileContents({ paths, ...rest }) {
 }
 
 export function createMcpServer({ bridge }) {
-  const server = new Server({ name: "claude-in-firefox", version: "0.2.0" }, { capabilities: { tools: {} } });
+  const server = new Server({ name: "claude-in-firefox", version: PACKAGE_VERSION }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     try {
@@ -155,8 +165,10 @@ export function createMcpServer({ bridge }) {
   return server;
 }
 
-if (isMain(import.meta.url)) {
-  const bridge = new BridgeClient({ socketPath: SOCKET_PATH, sessionId: randomUUID() });
+export async function runMcpServer() {
+  const bridge = new BridgeClient({ address: () => bridgeAddress(), sessionId: randomUUID() });
   await createMcpServer({ bridge }).connect(new StdioServerTransport());
   process.stdin.on("end", () => process.exit(0));
 }
+
+if (isMain(import.meta.url)) await runMcpServer();
