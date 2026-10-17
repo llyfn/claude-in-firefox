@@ -11,11 +11,16 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "cfb-install-"));
 const PIPE = /^\\\\\.\\pipe\\claude-firefox-bridge-[0-9a-f]{32}\n$/;
 
-function fakeRun({ failing = [] } = {}) {
+function fakeRun({ failing = [], skipPackage = false } = {}) {
   const calls = [];
   const run = async (command, args, options = {}) => {
     calls.push({ command: path.basename(command), args, cwd: options.cwd });
     if (failing.some((f) => [command, ...args].join(" ").includes(f))) throw new Error(`${command} failed`);
+    if (args.includes("install") && !skipPackage) {
+      const host = path.join(args[args.indexOf("--prefix") + 1], "node_modules/@llyfn/claude-in-firefox/host/src");
+      fs.mkdirSync(host, { recursive: true });
+      fs.writeFileSync(path.join(host, "native-host.js"), "");
+    }
     if (args.includes("pack")) return { stdout: `llyfn-claude-in-firefox-${VERSION}.tgz\n`, stderr: "" };
     return { stdout: "", stderr: "" };
   };
@@ -87,6 +92,36 @@ test("npx's execpath is swapped for npm's, and without one npm is found on PATH"
   await assert.rejects(install({ homeDir: tmp(), platform: "linux", env: { PATH: "" }, nodePath: "/usr/bin/node", packageRoot: REPO, run: fakeRun().run, claude: false }), /npm was not found on PATH/);
 });
 
+test("an npm_execpath that is not npm's falls back to npm on PATH", async () => {
+  const { run, calls } = fakeRun();
+  await install({ homeDir: tmp(), platform: "linux", env: { PATH: binDir("npm"), npm_execpath: "/x/pnpm.cjs" }, nodePath: "/usr/bin/node", packageRoot: REPO, run, claude: false });
+  assert.deepEqual([calls[0].command, calls[0].args[0]], ["npm", "pack"]);
+});
+
+test("a clone under some node_modules folder is packed, not fetched from the registry", async () => {
+  const root = path.join(tmp(), "node_modules/foo/clone");
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "x", version: "1.0.0" }));
+  const { run, calls } = fakeRun();
+  await install({ homeDir: tmp(), platform: "linux", env: { PATH: "", npm_execpath: "/n/npm-cli.js" }, nodePath: "/usr/bin/node", packageRoot: root, run, claude: false });
+  assert.equal(calls[0].args[1], "pack");
+});
+
+test("install fails when npm did not produce the package, and a failing npm install leaves the previous install alone", async () => {
+  const home = tmp();
+  const env = { PATH: "", npm_execpath: "/n/npm-cli.js" };
+  const options = { homeDir: home, platform: "linux", env, nodePath: "/usr/bin/node", packageRoot: REPO, claude: false };
+  await assert.rejects(install({ ...options, run: fakeRun({ skipPackage: true }).run }), /npm installed .* but .*claude-in-firefox is missing/);
+  const legacy = path.join(home, ".local/share/claude-in-firefox/host");
+  const manifest = path.join(home, ".mozilla/native-messaging-hosts/claude_firefox_bridge.json");
+  fs.mkdirSync(legacy, { recursive: true });
+  fs.mkdirSync(path.dirname(manifest), { recursive: true });
+  fs.writeFileSync(manifest, "old");
+  await assert.rejects(install({ ...options, run: fakeRun({ failing: ["install"] }).run }), /failed/);
+  assert.equal(fs.existsSync(legacy), true);
+  assert.equal(fs.readFileSync(manifest, "utf8"), "old");
+});
+
 test("--no-claude leaves Claude Code alone, and a missing claude prints the command instead", async () => {
   const skipped = fakeRun();
   const env = { PATH: binDir("claude"), npm_execpath: "/npm/bin/npm-cli.js" };
@@ -99,11 +134,15 @@ test("--no-claude leaves Claude Code alone, and a missing claude prints the comm
   assert.match(b.claudeCommand, /^claude mcp add --scope user firefox -- "\/usr\/bin\/node" ".*cli\.js" mcp$/);
 });
 
-test("a failing claude mcp remove is ignored but a failing add is reported", async () => {
+test("a failing claude mcp remove is ignored and a failing add is reported without aborting the install", async () => {
   const env = { PATH: binDir("claude"), npm_execpath: "/npm/bin/npm-cli.js" };
   const ok = await install({ homeDir: tmp(), platform: "linux", env, nodePath: "/usr/bin/node", packageRoot: REPO, run: fakeRun({ failing: ["mcp remove"] }).run });
   assert.equal(ok.claudeStatus, "registered");
-  await assert.rejects(install({ homeDir: tmp(), platform: "linux", env, nodePath: "/usr/bin/node", packageRoot: REPO, run: fakeRun({ failing: ["mcp add"] }).run }), /failed/);
+  const bad = await install({ homeDir: tmp(), platform: "linux", env, nodePath: "/usr/bin/node", packageRoot: REPO, run: fakeRun({ failing: ["mcp add"] }).run });
+  assert.equal(bad.claudeStatus, "failed");
+  assert.match(bad.claudeError, /failed/);
+  assert.equal(fs.existsSync(bad.manifestPath), true);
+  assert.match(bad.claudeCommand, /^claude mcp add --scope user firefox -- "\/usr\/bin\/node" ".*cli\.js" mcp$/);
 });
 
 test("on Linux the app directory is under ~/.local/share and the manifest under ~/.mozilla", async () => {
@@ -120,10 +159,20 @@ test("on Windows install writes a .cmd wrapper, the pipe name and the manifest i
   const result = await install({ homeDir: tmp(), platform: "win32", env, nodePath: "C:\\node\\node.exe", packageRoot: REPO, run, claude: false });
   const appDir = path.join(local, "claude-in-firefox");
   assert.equal(result.wrapperPath, path.join(appDir, "native-host.cmd"));
-  assert.equal(fs.readFileSync(result.wrapperPath, "utf8"), `@echo off\r\n"C:\\node\\node.exe" "${path.join(result.pkgDir, "host/src/native-host.js")}" %*\r\n`);
+  assert.equal(fs.readFileSync(result.wrapperPath, "utf8"), `@echo off\r\n"C:\\node\\node.exe" "%~dp0node_modules\\@llyfn\\claude-in-firefox\\host\\src\\native-host.js" %*\r\n`);
   assert.match(fs.readFileSync(path.join(appDir, "pipe-name"), "utf8"), PIPE);
   assert.equal(result.manifestPath, path.join(appDir, "claude_firefox_bridge.json"));
   assert.deepEqual([calls.at(-1).command, ...calls.at(-1).args], ["reg", "add", "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\claude_firefox_bridge", "/ve", "/t", "REG_SZ", "/d", result.manifestPath, "/f"]);
+});
+
+test("on Windows a percent sign in the node path is escaped and a non-ASCII one is warned about", async () => {
+  const env = { PATH: "", LOCALAPPDATA: tmp(), npm_execpath: "C:/npm/npm-cli.js" };
+  const options = { homeDir: tmp(), platform: "win32", env, packageRoot: REPO, run: fakeRun().run, claude: false };
+  const plain = await install({ ...options, nodePath: "C:\\100%\\node.exe" });
+  assert.match(fs.readFileSync(plain.wrapperPath, "utf8"), /^@echo off\r\n"C:\\100%%\\node\.exe" /);
+  assert.deepEqual(plain.warnings, []);
+  const odd = await install({ ...options, nodePath: "C:\\Users\\\u00e9\\node.exe" });
+  assert.deepEqual(odd.warnings, ["Node is installed at a path with non-ASCII characters (C:\\Users\\\u00e9\\node.exe); Firefox may fail to start the native host. Install Node in a path with only ASCII characters if the add-on cannot connect."]);
 });
 
 test("the Windows pipe name is created once and kept", async () => {
@@ -172,8 +221,32 @@ test("uninstall reports when there is nothing to remove", async () => {
   assert.deepEqual(removed, []);
 });
 
+test("uninstall fails before touching Claude Code on an unsupported platform, and reports what it could not remove", async () => {
+  const { run, calls } = fakeRun();
+  await assert.rejects(uninstall({ homeDir: tmp(), platform: "aix", env: { PATH: binDir("claude") }, run }), /Unsupported platform/);
+  assert.equal(calls.length, 0);
+  const clean = await uninstall({ homeDir: tmp(), platform: "linux", env: { PATH: "" }, run });
+  assert.deepEqual(clean.failed, []);
+
+  const home = tmp();
+  const parent = path.join(home, ".local/share");
+  const appDir = path.join(parent, "claude-in-firefox");
+  fs.mkdirSync(path.join(appDir, "sub"), { recursive: true });
+  fs.chmodSync(parent, 0o555);
+  try {
+    const result = await uninstall({ homeDir: home, platform: "linux", env: { PATH: "" }, run });
+    assert.deepEqual(result.removed, []);
+    assert.equal(result.failed.length, 1);
+    assert.equal(result.failed[0].path, appDir);
+    assert.equal(typeof result.failed[0].error, "string");
+  } finally {
+    fs.chmodSync(parent, 0o755);
+  }
+});
+
 test("findExecutable checks PATH, with PATHEXT on Windows", () => {
   const unix = binDir("claude");
+  assert.equal(findExecutable("claude", { PATH: `"${unix}"` }, "linux"), path.join(unix, "claude"));
   assert.equal(findExecutable("claude", { PATH: ["relative", unix].join(path.delimiter) }, "linux"), path.join(unix, "claude"));
   assert.equal(findExecutable("claude", { PATH: "" }, "linux"), null);
   const win = binDir("claude.cmd");
