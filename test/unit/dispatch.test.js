@@ -83,9 +83,11 @@ test("session_closed forgets the session and sends nothing", async () => {
 });
 
 test("the owned tab is made active before the tool runs", async () => {
-  const { dispatch, activated } = setup({ look: { tabScoped: true, run: async () => "ok" } });
+  let activatedWhenRun;
+  const tools = { look: { tabScoped: true, run: async () => { activatedWhenRun = [...activated]; return "ok"; } } };
+  const { dispatch, activated } = setup(tools);
   await dispatch(call("look", { tabId: 5 }));
-  assert.deepEqual(activated, [5]);
+  assert.deepEqual(activatedWhenRun, [5]);
 });
 
 test("tab changes are appended to results except tabs_context, which lists every tab", async () => {

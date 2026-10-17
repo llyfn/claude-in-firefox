@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { NO_SESSION_MESSAGE, createSessions } from "../../extension/background/sessions.js";
 
-function fakeApi({ groups: groupsEnabled = true } = {}) {
+function fakeApi({ groups: groupsEnabled = true, noGroupApi = false } = {}) {
   let nextTab = 1;
   let nextWindow = 10;
   let nextGroup = 100;
@@ -10,6 +10,7 @@ function fakeApi({ groups: groupsEnabled = true } = {}) {
   const windows = new Map();
   const groups = new Map();
   const values = new Map();
+  const counts = { getAll: 0 };
   const copy = (t) => ({ ...t });
   const addTab = (props) => {
     const t = { id: nextTab++, title: "", groupId: -1, active: false, ...props };
@@ -31,7 +32,7 @@ function fakeApi({ groups: groupsEnabled = true } = {}) {
         if (!windows.has(id)) throw new Error(`Invalid window ID: ${id}`);
         return { ...windows.get(id) };
       },
-      getAll: async () => [...windows.values()].map((w) => ({ ...w })),
+      getAll: async () => { counts.getAll++; return [...windows.values()].map((w) => ({ ...w })); },
       update: async (id, props) => { Object.assign(windows.get(id), props); },
     },
     sessions: {
@@ -61,11 +62,15 @@ function fakeApi({ groups: groupsEnabled = true } = {}) {
       query: async ({ windowId }) => [...groups.entries()].filter(([, g]) => g.windowId === windowId).map(([id, g]) => ({ id, ...g })),
     },
   };
+  if (noGroupApi) {
+    delete api.tabs.group;
+    delete api.tabGroups;
+  }
   const closeWindow = (id) => {
     windows.delete(id);
     for (const t of [...tabs.values()]) if (t.windowId === id) tabs.delete(t.id);
   };
-  return { api, tabs, windows, groups, values, addTab, addWindow, closeWindow };
+  return { api, counts, tabs, windows, groups, values, addTab, addWindow, closeWindow };
 }
 
 const ID = "abcd1234-0000-4000-8000-000000000000";
@@ -230,4 +235,76 @@ test("close forgets the session and clears its window values", async () => {
   await sessions.close(ID);
   assert.equal(values.size, 0);
   assert.equal(await sessions.context(ID), null);
+});
+
+test("a call racing the first lookup after a reload sees the recovered stop state", async () => {
+  const { api } = fakeApi();
+  const first = createSessions(api);
+  await first.context(ID, { createIfEmpty: true });
+  await first.setStopped(ID, true);
+  const second = createSessions(api);
+  await Promise.all([second.setStopped(ID, true), second.isStopped(ID)]);
+  assert.equal(await second.isStopped(ID), true);
+});
+
+test("parallel lookups after a reload share one recovery scan", async () => {
+  const { api, counts } = fakeApi();
+  const ctx = await createSessions(api).context(ID, { createIfEmpty: true });
+  const second = createSessions(api);
+  counts.getAll = 0;
+  const [a, b] = await Promise.all([second.context(ID), second.context(ID)]);
+  assert.equal(a.windowId, ctx.windowId);
+  assert.equal(b.windowId, ctx.windowId);
+  assert.equal(counts.getAll, 1);
+});
+
+test("recovery keeps the existing group color", async () => {
+  const { api, groups } = fakeApi();
+  await createSessions(api).context(ID, { createIfEmpty: true });
+  [...groups.values()][0].color = "red";
+  const second = createSessions(api);
+  await second.context(ID);
+  await second.setStatus(ID, "busy");
+  assert.equal([...groups.values()][0].color, "red");
+});
+
+test("a failing window value save does not leave the session half-built", async () => {
+  const { api, windows } = fakeApi();
+  api.sessions.setWindowValue = async () => { throw new Error("nope"); };
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  assert.equal(windows.get(ctx.windowId).titlePreface, "Claude · abcd1234 — ");
+});
+
+test("closing the main window also clears the popup windows' values", async () => {
+  const { api, addTab, addWindow, closeWindow, values } = fakeApi();
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const popupWindow = addWindow({ type: "popup" });
+  await sessions.adoptOpened(addTab({ windowId: popupWindow, url: "https://login.test/", openerTabId: 1 }));
+  closeWindow(ctx.windowId);
+  sessions.windowRemoved(ctx.windowId);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(values.has(`${popupWindow}:claudeSession`), false);
+});
+
+test("closing a popup window leaves the session in place", async () => {
+  const { api, addTab, addWindow, closeWindow } = fakeApi();
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const popupWindow = addWindow({ type: "popup" });
+  await sessions.adoptOpened(addTab({ windowId: popupWindow, url: "https://login.test/", openerTabId: 1 }));
+  closeWindow(popupWindow);
+  sessions.windowRemoved(popupWindow);
+  assert.equal((await sessions.context(ID)).windowId, ctx.windowId);
+});
+
+test("sessions work when the tab group APIs are missing entirely", async () => {
+  const { api } = fakeApi({ noGroupApi: true });
+  const sessions = createSessions(api);
+  const ctx = await sessions.context(ID, { createIfEmpty: true });
+  const tab = await sessions.createTab(ID);
+  await sessions.setStatus(ID, "busy");
+  assert.equal((await sessions.ownedTab(ID, tab.id)).windowId, ctx.windowId);
+  assert.equal((await createSessions(api).context(ID)).windowId, ctx.windowId);
 });

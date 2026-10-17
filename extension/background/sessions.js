@@ -6,24 +6,28 @@ export const NO_SESSION_MESSAGE = "This session has no window yet. Call tabs_con
 export function createSessions(api) {
   const records = new Map();
   const creating = new Map();
+  const recovering = new Map();
   let nextColor = 0;
 
   const tagOf = (sessionId) => `Claude · ${sessionId.slice(0, 8)}`;
   const labelOf = (rec) => `${rec.stopped ? "⏸ " : STATUS_PREFIX[rec.status]}${tagOf(rec.id)}`;
+
+  // Firefox may leave the tab group APIs undefined instead of rejecting when groups are disabled.
+  const groupCall = (fn) => Promise.resolve().then(fn);
 
   function newRecord(sessionId) {
     return { id: sessionId, main: null, windows: new Set(), groupId: null, color: null, status: "new", stopped: false, known: null };
   }
 
   function register(rec) {
-    rec.color = COLORS[nextColor++ % COLORS.length];
+    rec.color ??= COLORS[nextColor++ % COLORS.length];
     records.set(rec.id, rec);
   }
 
   async function applyLabel(rec) {
     const label = labelOf(rec);
     await api.windows.update(rec.main, { titlePreface: `${label} — ` }).catch(() => {});
-    if (rec.groupId != null) await api.tabGroups.update(rec.groupId, { title: label, color: rec.color }).catch(() => {});
+    if (rec.groupId != null) await groupCall(() => api.tabGroups.update(rec.groupId, { title: label, color: rec.color })).catch(() => {});
   }
 
   const persist = (rec, windowId) => api.sessions.setWindowValue(windowId, KEY, { sessionId: rec.id, role: windowId === rec.main ? "main" : "popup", stopped: rec.stopped });
@@ -44,15 +48,21 @@ export function createSessions(api) {
       if (value.stopped) rec.stopped = true;
     }
     if (rec.main == null) return null;
-    const groups = await api.tabGroups.query({ windowId: rec.main }).catch(() => []);
-    rec.groupId = groups.find((g) => g.title?.endsWith(tagOf(sessionId)))?.id ?? null;
+    const groups = await groupCall(() => api.tabGroups.query({ windowId: rec.main })).catch(() => []);
+    const group = groups.find((g) => g.title?.endsWith(tagOf(sessionId)));
+    rec.groupId = group?.id ?? null;
+    rec.color = group?.color ?? null;
+    if (records.has(sessionId)) return records.get(sessionId);
     register(rec);
     return rec;
   }
 
   async function find(sessionId) {
     const rec = records.get(sessionId);
-    if (!rec) return recover(sessionId);
+    if (!rec) {
+      if (!recovering.has(sessionId)) recovering.set(sessionId, recover(sessionId).finally(() => recovering.delete(sessionId)));
+      return recovering.get(sessionId);
+    }
     if (await api.windows.get(rec.main).then(() => true, () => false)) return rec;
     records.delete(sessionId);
     return null;
@@ -64,8 +74,8 @@ export function createSessions(api) {
     rec.main = win.id;
     rec.windows.add(win.id);
     register(rec);
-    await persist(rec, win.id);
-    rec.groupId = await api.tabs.group({ tabIds: win.tabs.map((t) => t.id), createProperties: { windowId: win.id } }).catch(() => null);
+    await persist(rec, win.id).catch(() => {});
+    rec.groupId = await groupCall(() => api.tabs.group({ tabIds: win.tabs.map((t) => t.id), createProperties: { windowId: win.id } })).catch(() => null);
     await applyLabel(rec);
     return rec;
   }
@@ -80,6 +90,9 @@ export function createSessions(api) {
       let rec = await find(sessionId);
       if (!rec) {
         if (!createIfEmpty) return null;
+        rec = records.get(sessionId);
+      }
+      if (!rec) {
         if (!creating.has(sessionId)) creating.set(sessionId, create(sessionId).finally(() => creating.delete(sessionId)));
         rec = await creating.get(sessionId);
       }
@@ -92,7 +105,7 @@ export function createSessions(api) {
       const rec = await find(sessionId);
       if (!rec) throw new Error(NO_SESSION_MESSAGE);
       const tab = await api.tabs.create({ windowId: rec.main, url: "about:blank", active: true });
-      if (rec.groupId != null) await api.tabs.group({ groupId: rec.groupId, tabIds: [tab.id] }).catch(() => {});
+      if (rec.groupId != null) await groupCall(() => api.tabs.group({ groupId: rec.groupId, tabIds: [tab.id] })).catch(() => {});
       return tab;
     },
 
@@ -117,7 +130,7 @@ export function createSessions(api) {
       const rec = opener && recordOfWindow(opener.windowId);
       if (!rec) return;
       if (rec.windows.has(tab.windowId)) {
-        if (tab.windowId === rec.main && rec.groupId != null) await api.tabs.group({ groupId: rec.groupId, tabIds: [tab.id] }).catch(() => {});
+        if (tab.windowId === rec.main && rec.groupId != null) await groupCall(() => api.tabs.group({ groupId: rec.groupId, tabIds: [tab.id] })).catch(() => {});
         return;
       }
       if ((await api.tabs.query({ windowId: tab.windowId })).length !== 1) return;
@@ -170,8 +183,10 @@ export function createSessions(api) {
 
     windowRemoved(windowId) {
       for (const rec of [...records.values()]) {
-        if (rec.main === windowId) records.delete(rec.id);
-        else rec.windows.delete(windowId);
+        if (rec.main === windowId) {
+          records.delete(rec.id);
+          for (const id of rec.windows) if (id !== windowId) api.sessions.removeWindowValue(id, KEY).catch(() => {});
+        } else rec.windows.delete(windowId);
       }
     },
 
