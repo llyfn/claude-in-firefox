@@ -136,7 +136,7 @@ test("Firefox closing stdin stops the host accepting connections and removes the
   h.input.end();
   const deadline = Date.now() + 2000;
   let code;
-  while (!(code = await connectError(h.socketPath)) && Date.now() < deadline) await sleep(10);
+  while (!["ENOENT", "ECONNREFUSED"].includes((code = await connectError(h.socketPath))) && Date.now() < deadline) await sleep(10);
   assert.match(String(code), /^(ENOENT|ECONNREFUSED)$/);
   if (process.platform !== "win32") assert.equal(fs.existsSync(h.socketPath), false);
 });
