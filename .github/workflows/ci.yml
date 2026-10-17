@@ -58,13 +58,38 @@ jobs:
       - name: Diagnostics before e2e
         shell: bash
         run: |
-          npx --no -- node -e "console.log('npm_execpath under npx:', process.env.npm_execpath)"
+          npx -c 'node -e "console.log(process.env.npm_execpath)"' || true
           ls -la "$FIREFOX_BIN" || true
           if [ "$RUNNER_OS" = Linux ]; then "$FIREFOX_BIN" --version; file "$RUNNER_TEMP/firefox.tar.xz"; else ls "/c/Program Files"; fi
       - run: npm run install-host -- --no-claude
+      - name: Diagnostics resize (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          cat > "$RUNNER_TEMP/diag.mjs" <<EOF
+          import { startHarness, textOf } from "$GITHUB_WORKSPACE/test/e2e/harness.js";
+          const h = await startHarness();
+          try {
+            const tabId = Number(/Created tab (\d+)/.exec(textOf(await h.call("tabs_create")))[1]);
+            await h.call("navigate", { tabId, url: h.fixtures.a + "/basic.html" });
+            const context = await h.bidi.contextOf("/basic.html");
+            const sizes = "JSON.stringify({ outer: [outerWidth, outerHeight], inner: [innerWidth, innerHeight], screen: [screen.width, screen.height, screen.availWidth, screen.availHeight, screen.colorDepth] })";
+            console.log("before", await h.bidi.evaluate(context, sizes));
+            const t = Date.now();
+            const r = await h.call("resize_window", { tabId, width: 1280, height: 900 });
+            console.log("resize took", Date.now() - t, "ms:", textOf(r));
+            console.log("after", await h.bidi.evaluate(context, sizes));
+          } finally {
+            await h.close();
+          }
+          EOF
+          echo "--- default xvfb-run screen"
+          xvfb-run -a node "$RUNNER_TEMP/diag.mjs" || true
+          echo "--- 1920x1080x24 screen"
+          xvfb-run -a -s "-screen 0 1920x1080x24" node "$RUNNER_TEMP/diag.mjs" || true
       - name: End-to-end tests (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a npm run e2e
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run e2e
       - name: End-to-end tests (Windows)
         if: runner.os == 'Windows'
         run: npm run e2e
