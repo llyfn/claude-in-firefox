@@ -13,9 +13,7 @@ MCP client ──starts──▶ claude-firefox mcp ──unix socket──▶ n
 
 Each Claude Code session gets its own Firefox window, opened behind the Firefox window you are using, and can only touch tabs in that window (plus popups opened from it). The window title and, when tab groups are enabled, a tab group show the session's status: ⌛ working, ✅ idle, ⏸ stopped. A violet glow and a phantom cursor show which tab Claude is working in.
 
-The MCP server runs from this repository. The native host is the process Firefox launches, and it runs from a copy outside the repository (`~/Library/Application Support/claude-in-firefox/host/` on macOS, `~/.local/share/claude-in-firefox/host/` on Linux), because macOS privacy protection blocks processes that Firefox launches from reading `~/Desktop`, `~/Documents` and `~/Downloads`.
-
-Both halves run from one copy of the package that the installer puts in an app directory (`~/Library/Application Support/claude-in-firefox` on macOS, `~/.local/share/claude-in-firefox` on Linux, `%LOCALAPPDATA%\claude-in-firefox` on Windows). Firefox starts the native host from there through native messaging, and MCP clients start the MCP server from there. On Windows the two meet on a named pipe whose random name is kept in `pipe-name` in that directory, because Node cannot restrict a pipe to one user. Also on Windows, Firefox finds the native host through the registry key `HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge`.
+Both halves run from one copy of the package that the installer puts in an app directory (`~/Library/Application Support/claude-in-firefox` on macOS, `~/.local/share/claude-in-firefox` on Linux, `%LOCALAPPDATA%\claude-in-firefox` on Windows). The app directory is outside `~/Desktop`, `~/Documents` and `~/Downloads` because macOS privacy protection blocks processes that Firefox launches from reading those folders. Firefox starts the native host from there through native messaging, and MCP clients start the MCP server from there. On Windows the two meet on a named pipe whose random name is kept in `pipe-name` in that directory, because Node cannot restrict a pipe to one user. Also on Windows, Firefox finds the native host through the registry key `HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge`.
 
 ## Requirements
 
@@ -124,7 +122,7 @@ For each release:
 
 ## Troubleshooting
 
-- **"Firefox extension not connected".** Firefox isn't running, the add-on isn't installed, or `npx @llyfn/claude-in-firefox install` wasn't run. On Windows, `pipe-name` must exist in the app directory. The Browser Console (⌘⇧J) shows native host errors prefixed `claude-firefox native host:`.
+- **"Firefox extension not connected".** Firefox isn't running, the add-on isn't installed, or `npx @llyfn/claude-in-firefox install` wasn't run. On Windows, `pipe-name` must exist in the app directory. The Browser Console (⌘⇧J, or Ctrl+Shift+J on Windows and Linux) shows native host errors prefixed `claude-firefox native host:`.
 - **Native host or MCP server stops starting after a Node upgrade.** The installer records the first `node` on `PATH`. After changing Node installations, re-run `npx @llyfn/claude-in-firefox install`, which rewrites the wrapper and the Claude Code entry with the current node.
 - **"Cannot access this page".** The page is one Firefox reserves (see Safety).
 - **Clicks land in the wrong place.** Take a fresh `screenshot` first: coordinates always refer to the most recent screenshot of that tab.
