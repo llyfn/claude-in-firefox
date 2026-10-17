@@ -77,7 +77,7 @@ export function computerTool({ api, content, capture }) {
       }
       case "wait": {
         const seconds = Number(args.duration);
-        if (!(seconds > 0 && seconds <= 10)) throw new Error("wait: duration must be between 0 and 10 seconds");
+        if (!(seconds > 0 && seconds <= 30)) throw new Error("wait: duration must be between 0 and 30 seconds");
         await sleep(seconds * 1000);
         return `Waited ${seconds} second(s)`;
       }

@@ -57,7 +57,7 @@ export const TOOLS = [
         modifiers: { type: "string", description: 'Modifier keys held during a click, joined with "+": ctrl, shift, alt, cmd.' },
         scroll_direction: { type: "string", enum: ["up", "down", "left", "right"] },
         scroll_amount: { type: "integer", minimum: 1, maximum: 10, description: "Scroll wheel ticks of 100 px. Default 3." },
-        duration: { type: "number", minimum: 0, maximum: 10, description: "Seconds to wait (wait action)." },
+        duration: { type: "number", minimum: 0, maximum: 30, description: "Seconds to wait (wait action), up to 30." },
         region: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4, description: "[x0, y0, x1, y1] in screenshot pixels (zoom action)." },
         repeat: { type: "integer", minimum: 1, maximum: 100, description: "Repeat the key sequence this many times (key action). Default 1." },
         scale: { type: "number", minimum: 0.1, maximum: 1, description: "Shrink the returned screenshot or zoom image by this factor to save tokens. Coordinates always refer to the full-size frame reported with the image." },

@@ -78,6 +78,6 @@ test("screenshot, scroll and zoom return image blocks and bad input is rejected"
   assert.equal(scrolled.at(-1).type, "image");
   assert.equal((await run({ action: "zoom", region: [0, 0, 10, 10] }))[1].mimeType, "image/png");
   await assert.rejects(run({ action: "scroll", coordinate: [1, 1], scroll_direction: "sideways" }), /scroll_direction must be/);
-  await assert.rejects(run({ action: "wait", duration: 11 }), /between 0 and 10/);
+  await assert.rejects(run({ action: "wait", duration: 31 }), /between 0 and 30/);
   await assert.rejects(run({ action: "teleport" }), /unknown action "teleport"/);
 });
