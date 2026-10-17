@@ -64,12 +64,12 @@ jobs:
           import fs from "node:fs";
           const root = process.argv[2];
           const nav = `${root}/extension/background/navigation.js`;
-          let s = fs.readFileSync(nav, "utf8");
+          let s = fs.readFileSync(nav, "utf8").replace(/\r\n/g, "\n");
           s = s.replace("const [expected, navigating] = counted?.[0] ?? [];", "const [expected, navigating] = counted?.[0] ?? [];\n  globalThis.__fs = { counted, start: Date.now() };");
           s = s.replace("const children = frames?.filter((f) => f.parentFrameId === 0);", "const children = frames?.filter((f) => f.parentFrameId === 0);\n    globalThis.__fs.children = children?.map((f) => [f.frameId, f.url]); globalThis.__fs.waited = Date.now() - globalThis.__fs.start;");
           fs.writeFileSync(nav, s);
           const content = `${root}/extension/background/content.js`;
-          let c = fs.readFileSync(content, "utf8");
+          let c = fs.readFileSync(content, "utf8").replace(/\r\n/g, "\n");
           c = c.replace("      } catch {\n        const tab = await api.tabs.get(tabId);\n        throw new Error(`Cannot access this page (${tab.url}): Firefox does not allow extensions here.`);",
             "      } catch (e2) {\n        const tab = await api.tabs.get(tabId);\n        const frames = await api.webNavigation.getAllFrames({ tabId }).catch(() => []);\n        throw new Error(`Cannot access this page (${tab.url}): Firefox does not allow extensions here. DEBUG send=${err?.message} inject=${e2?.message} now=${JSON.stringify(frames.map((f) => [f.frameId, f.url]))} settled=${JSON.stringify(globalThis.__fs)} sinceSettled=${Date.now() - (globalThis.__fs?.start ?? 0)}`);");
           fs.writeFileSync(content, c);
