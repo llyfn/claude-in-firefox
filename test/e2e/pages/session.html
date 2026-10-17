@@ -10,4 +10,6 @@
 <p><button id="unload" onclick="window.dispatchEvent(new Event('beforeunload')); log('fired beforeunload')">Fire beforeunload</button></p>
 <form action="/basic.html"><button id="go">Go to basic</button></form>
 <p><button id="push" onclick="history.pushState(null, '', '?pushed')">Push state</button></p>
+<p><a id="download" href="/upload-sample.txt" download="sample.txt">Download sample</a></p>
+<p><a id="export" href="/api/export">Export CSV</a></p>
 <button id="bottom" style="position: fixed; left: 0; right: 0; bottom: 0; height: 120px" onclick="log('bottom clicked')">Bottom bar</button>

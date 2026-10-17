@@ -1,5 +1,7 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { imagesOf, startHarness, textOf } from "./harness.js";
 
@@ -395,6 +397,24 @@ describe("session window", () => {
   test("stringified arguments are accepted", async () => {
     const r = await h.call("computer", { tabId: String(tabId), action: "screenshot", scale: "0.5" });
     assert.equal(r.isError, false, textOf(r));
+  });
+
+  async function clickDownload(query, file) {
+    const ref = /- (ref_\d+):/.exec(textOf(await h.call("find", { tabId, query })))[1];
+    const started = Date.now();
+    const r = await h.call("computer", { tabId, action: "left_click", ref });
+    assert.equal(r.isError, false, textOf(r));
+    assert.doesNotMatch(textOf(r), /Still loading/);
+    assert.ok(Date.now() - started < 5000, `the click took ${Date.now() - started} ms`);
+    await eventually(() => assert.ok(fs.existsSync(path.join(h.downloads, file))));
+  }
+
+  test("a click on a download link saves the file without waiting for a page load", async () => {
+    await clickDownload("Download sample link", "sample.txt");
+  });
+
+  test("a click on a link answered with an attachment saves the file without waiting for a page load", async () => {
+    await clickDownload("Export CSV link", "export.csv");
   });
 
   test("pushState and form submissions are reported after the click", async () => {

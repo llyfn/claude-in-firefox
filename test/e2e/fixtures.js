@@ -13,6 +13,11 @@ function handler(req, res) {
     res.end('{"pong":true}');
     return;
   }
+  if (url.pathname === "/api/export") {
+    res.writeHead(200, { "content-type": "text/csv", "content-disposition": 'attachment; filename="export.csv"' });
+    res.end("a,b\n1,2\n");
+    return;
+  }
   const file = path.join(PAGES, path.normalize(url.pathname).replace(/^\/+/, ""));
   if (!file.startsWith(PAGES) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     res.writeHead(404);

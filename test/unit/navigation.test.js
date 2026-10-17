@@ -14,11 +14,23 @@ function fakeApi({ tab = { id: 1, url: "https://b.test/", title: "B", status: "c
       onHistoryStateUpdated: event("history"), onReferenceFragmentUpdated: event("fragment"),
       getAllFrames: async () => [],
     },
-    tabs: { get: async () => tab, executeScript: async () => [0] },
+    tabs: {
+      get: async (id) => {
+        if (closed) throw new Error(`Invalid tab ID: ${id}`);
+        return tab;
+      },
+      executeScript: async () => [0],
+      onRemoved: event("removed"),
+    },
   };
+  let closed = false;
   const fire = (name, details) => { for (const l of [...listeners[name]]) l({ tabId: 1, frameId: 0, ...details }); };
+  const close = (tabId = 1) => {
+    if (tabId === 1) closed = true;
+    for (const l of [...listeners.removed]) l(tabId, { windowId: 5, isWindowClosing: false });
+  };
   const live = () => Object.values(listeners).reduce((n, set) => n + set.size, 0);
-  return { api, fire, live };
+  return { api, fire, close, live };
 }
 
 test("no navigation within the start window settles with no suffix and stops listening", async () => {
@@ -83,6 +95,33 @@ test("an abort signal ends the wait early", async () => {
   const started = Date.now();
   await watch.settle();
   assert.ok(Date.now() - started < 1000);
+});
+
+test("a tab that closes after its load finished reports that it closed", async () => {
+  const { api, fire, close, live } = fakeApi();
+  const watch = watchNavigation(api, 1, { startMs: 50 });
+  fire("before", { url: "https://b.test/" });
+  fire("completed", { url: "https://b.test/" });
+  close();
+  assert.equal(await watch.settle(), "→ The tab closed");
+  assert.equal(live(), 0);
+});
+
+test("a tab that closes while its load is in flight ends the wait", async () => {
+  const { api, fire, close } = fakeApi();
+  const watch = watchNavigation(api, 1, { startMs: 50, loadMs: 60_000 });
+  fire("before", { url: "https://b.test/" });
+  setTimeout(() => { close(2); close(); }, 5);
+  const started = Date.now();
+  assert.equal(await watch.settle(), "→ The tab closed");
+  assert.ok(Date.now() - started < 1000);
+});
+
+test("a tab that closes itself without navigating reports that it closed", async () => {
+  const { api, close } = fakeApi();
+  const watch = watchNavigation(api, 1, { startMs: 50 });
+  close();
+  assert.equal(await watch.settle(), "→ The tab closed");
 });
 
 test("framesSettled waits until the child frame is registered", async () => {

@@ -1,5 +1,6 @@
 export const SETTLE_START_MS = 500;
 export const SETTLE_LOAD_MS = 10_000;
+const TAB_CLOSED = "→ The tab closed";
 
 // The tab's url and title update shortly after the webNavigation events that report the load.
 export async function tabShowing(api, tabId, url) {
@@ -54,6 +55,7 @@ export function watchNavigation(api, tabId, { signal, startMs = SETTLE_START_MS,
   let started = null;
   let finished = null;
   let sameDocument = null;
+  let closed = false;
   let wake = () => {};
   const top = (details) => details.tabId === tabId && details.frameId === 0;
   const onSameDocument = (details) => { if (top(details)) { sameDocument = details.url; wake(); } };
@@ -63,6 +65,7 @@ export function watchNavigation(api, tabId, { signal, startMs = SETTLE_START_MS,
     [onReferenceFragmentUpdated, onSameDocument],
     [onCompleted, (details) => { if (top(details) && started) { finished = details.url; wake(); } }],
     [onErrorOccurred, (details) => { if (top(details) && started && details.error !== "NS_BINDING_ABORTED") { finished = details.url; wake(); } }],
+    [api.tabs.onRemoved, (removedId) => { if (removedId === tabId) { closed = true; wake(); } }],
   ];
   for (const [event, listener] of listeners) event.addListener(listener);
   const stop = () => { for (const [event, listener] of listeners) event.removeListener(listener); };
@@ -84,11 +87,14 @@ export function watchNavigation(api, tabId, { signal, startMs = SETTLE_START_MS,
     stop,
     async settle() {
       try {
-        await until(() => started || sameDocument, startMs);
+        await until(() => started || sameDocument || closed, startMs);
+        if (closed) return TAB_CLOSED;
         if (!started) return sameDocument ? `→ URL changed to ${sameDocument}` : "";
-        await until(() => finished, loadMs);
+        await until(() => finished || closed, loadMs);
+        if (closed) return TAB_CLOSED;
         if (!finished) return `→ Still loading after ${loadMs / 1000}s: ${started}`;
-        const tab = await tabShowing(api, tabId, finished);
+        const tab = await tabShowing(api, tabId, finished).catch(() => null);
+        if (!tab) return TAB_CLOSED;
         await framesSettled(api, tabId);
         return `→ Navigated to ${tab.url} — "${tab.title}"`;
       } finally {

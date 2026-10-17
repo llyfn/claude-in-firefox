@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -33,9 +34,13 @@ export async function startHarness() {
   if (!fs.existsSync(nativeManifestPath())) throw new Error("Native host manifest missing. Run `npm run install-host` first.");
   if (await socketIsLive()) throw new Error(`${SOCKET_PATH} is already served. Quit Firefox Developer Edition before running e2e.`);
   const fixtures = await startFixtures();
+  // Without these, downloads land in the user's Downloads folder.
+  const downloads = fs.mkdtempSync(path.join(os.tmpdir(), "claude-firefox-e2e-downloads-"));
+  const removeDownloads = () => fs.rmSync(downloads, { recursive: true, force: true });
   const webExt = spawn(path.join(ROOT, "node_modules/.bin/web-ext"), [
     "run", "--source-dir", path.join(ROOT, "extension"), "--firefox", FIREFOX,
     "--no-reload", "--no-input", "--pref", "browser.tabs.groups.enabled=true", "--start-url", "about:blank",
+    "--pref", "browser.download.folderList=2", "--pref", `browser.download.dir=${downloads}`, "--pref", "browser.download.alwaysOpenPanel=false",
   ], { stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   webExt.stdout.on("data", (d) => { output += d; });
@@ -45,6 +50,7 @@ export async function startHarness() {
   } catch (err) {
     webExt.kill("SIGINT");
     await fixtures.close();
+    removeDownloads();
     throw err;
   }
 
@@ -62,6 +68,7 @@ export async function startHarness() {
 
   return {
     fixtures,
+    downloads,
     connect,
     call: main.call,
     async close() {
@@ -72,6 +79,7 @@ export async function startHarness() {
         webExt.once("exit", () => { clearTimeout(timer); resolve(); });
       });
       await fixtures.close();
+      removeDownloads();
     },
   };
 }
