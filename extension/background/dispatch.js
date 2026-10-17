@@ -1,4 +1,6 @@
-export function createDispatcher({ tools, sessions, activity, send }) {
+import { STOPPED_MESSAGE } from "./control.js";
+
+export function createDispatcher({ tools, sessions, activity, control, send }) {
   const tabQueues = new Map();
 
   function enqueue(tabId, fn) {
@@ -13,18 +15,21 @@ export function createDispatcher({ tools, sessions, activity, send }) {
   async function execute({ sessionId, tool, args = {} }) {
     const def = tools[tool];
     if (!def) throw new Error(`Unknown tool: ${tool}`);
-    if (!def.tabScoped) return def.run({ sessionId, args });
-    const tabId = typeof args.tabId === "string" && /^\d+$/.test(args.tabId) ? Number(args.tabId) : args.tabId;
-    if (!Number.isInteger(tabId)) throw new Error(`${tool}: tabId must be an integer`);
-    return enqueue(tabId, async () => {
-      const tab = await sessions.ownedTab(sessionId, tabId);
-      await sessions.activate(tab);
-      activity.start(tab.id);
-      try {
-        return await def.run({ sessionId, args: { ...args, tabId }, tab });
-      } finally {
-        activity.end(tab.id);
-      }
+    return control.run(sessionId, (signal) => {
+      if (!def.tabScoped) return def.run({ sessionId, args, signal });
+      const tabId = typeof args.tabId === "string" && /^\d+$/.test(args.tabId) ? Number(args.tabId) : args.tabId;
+      if (!Number.isInteger(tabId)) throw new Error(`${tool}: tabId must be an integer`);
+      return enqueue(tabId, async () => {
+        if (signal.aborted) throw new Error(STOPPED_MESSAGE);
+        const tab = await sessions.ownedTab(sessionId, tabId);
+        await sessions.activate(tab);
+        activity.start(tab.id);
+        try {
+          return await def.run({ sessionId, args: { ...args, tabId }, tab, signal });
+        } finally {
+          activity.end(tab.id);
+        }
+      });
     });
   }
 

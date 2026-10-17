@@ -120,3 +120,15 @@ test("a cancelled mousedown does not move focus", () => {
   w.__cf.input.click({ ref: refOf(w, "Go") });
   assert.equal(w.document.activeElement, a);
 });
+
+test("synthetic clicks look through the indicator's Stop pill to the page beneath", () => {
+  const w = setup(`<button id="b">Beneath</button>`);
+  const host = w.document.createElement("claude-firefox-indicator");
+  w.document.documentElement.append(host);
+  const button = w.document.getElementById("b");
+  stubElementFromPoint(w, () => host);
+  w.Document.prototype.elementsFromPoint = function elementsFromPoint() { return [host, button, this.body]; };
+  const seen = recorder(button);
+  w.__cf.input.click({ x: 50, y: 20 });
+  assert.ok(seen.includes("click"));
+});
