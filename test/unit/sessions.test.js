@@ -33,6 +33,11 @@ function fakeApi({ groups: groupsEnabled = true, noGroupApi = false } = {}) {
         return { ...windows.get(id) };
       },
       getAll: async () => { counts.getAll++; return [...windows.values()].map((w) => ({ ...w })); },
+      getLastFocused: async () => {
+        const win = [...windows.values()].find((w) => w.focused) ?? [...windows.values()].at(-1);
+        if (!win) throw new Error("Invalid window");
+        return { ...win };
+      },
       update: async (id, props) => { Object.assign(windows.get(id), props); },
     },
     sessions: {
@@ -91,6 +96,21 @@ test("createIfEmpty opens one unfocused window with a blank tab, labelled and re
   assert.deepEqual(values.get("10:claudeSession"), { sessionId: ID, role: "main", stopped: false });
   assert.equal((await sessions.context(ID, { createIfEmpty: true })).availableTabs.length, 1);
   assert.equal(windows.size, 1);
+});
+
+test("creating a session gives focus back to the Firefox window the user was in, and leaves focus alone when none had it", async () => {
+  for (const userFocused of [true, false]) {
+    const { api, addWindow } = fakeApi();
+    const user = addWindow({ focused: userFocused });
+    const focusCalls = [];
+    const update = api.windows.update;
+    api.windows.update = async (id, props) => {
+      if ("focused" in props) focusCalls.push([id, props.focused]);
+      return update(id, props);
+    };
+    await createSessions(api).context(ID, { createIfEmpty: true });
+    assert.deepEqual(focusCalls, userFocused ? [[user, true]] : []);
+  }
 });
 
 test("concurrent createIfEmpty calls open only one window", async () => {

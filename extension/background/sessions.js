@@ -69,7 +69,10 @@ export function createSessions(api) {
   }
 
   async function create(sessionId) {
+    const previous = await api.windows.getLastFocused().catch(() => null);
     const win = await api.windows.create({ url: "about:blank", focused: false });
+    // Firefox ignores focused: false and focuses the new window, so the user's window gets focus back.
+    if (previous?.focused) await api.windows.update(previous.id, { focused: true }).catch(() => {});
     const rec = newRecord(sessionId);
     rec.main = win.id;
     rec.windows.add(win.id);

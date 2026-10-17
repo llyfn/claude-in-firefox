@@ -107,6 +107,11 @@ function fakeApi() {
         return { ...windows.get(id) };
       },
       getAll: async () => { counts.getAll++; return [...windows.values()].map((w) => ({ ...w })); },
+      getLastFocused: async () => {
+        const win = [...windows.values()].find((w) => w.focused) ?? [...windows.values()].at(-1);
+        if (!win) throw new Error("Invalid window");
+        return { ...win };
+      },
       update: async (id, props) => { Object.assign(windows.get(id), props); },
     },
     sessions: {
