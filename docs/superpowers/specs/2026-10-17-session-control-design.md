@@ -89,7 +89,7 @@ Per-site permission prompts, a sidebar chat, `javascript_tool`, GIF recording, m
 
 ## 5. Own strings and styles
 
-- `get_page_text` chooses the longest of `main`, `[role=main]` and `article` when it has at least 200 characters of text, else `body`.
+- `get_page_text` chooses the element with the longest text among `main`, `[role=main]` and `article`, else `body`.
 - Redaction marker: `(sensitive value hidden)` in `read_page`; `form_input` prints `(hidden)` for sensitive values and `Selected an option (sensitive field; values hidden)` for sensitive selects.
 - `form_input` messages: `A checkbox needs true or false`; `No option matches "x". Options: "Text" = "value"; …`; sensitive: `No option matches (options of a sensitive field are not listed)`.
 - Indicator: violet `#7C5CFF` glow (`inset 0 0 0 2px` plus a soft `inset 0 0 28px` halo) and a white cursor with a violet outline.
