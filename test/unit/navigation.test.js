@@ -36,14 +36,28 @@ test("a load that starts and completes reports the final URL and title", async (
   assert.equal(await watch.settle(), '→ Navigated to https://b.test/ — "B"');
 });
 
-test("process-switch aborts are ignored and other frames do not count", async () => {
+test("a process-switch abort is not the end of the load", async () => {
   const { api, fire } = fakeApi();
-  const watch = watchNavigation(api, 1, { startMs: 50 });
-  fire("before", { url: "https://b.test/", frameId: 4 });
+  const watch = watchNavigation(api, 1, { startMs: 50, loadMs: 30 });
   fire("before", { url: "https://b.test/" });
   fire("error", { url: "https://b.test/", error: "NS_BINDING_ABORTED" });
-  setTimeout(() => fire("completed", { url: "https://b.test/" }), 5);
+  assert.equal(await watch.settle(), "→ Still loading after 0.03s: https://b.test/");
+});
+
+test("a real load error ends the wait", async () => {
+  const { api, fire } = fakeApi();
+  const watch = watchNavigation(api, 1, { startMs: 50, loadMs: 30 });
+  fire("before", { url: "https://b.test/" });
+  fire("error", { url: "https://b.test/", error: "NS_ERROR_UNKNOWN_HOST" });
   assert.equal(await watch.settle(), '→ Navigated to https://b.test/ — "B"');
+});
+
+test("events from other frames and about:blank do not count", async () => {
+  const { api, fire } = fakeApi();
+  const watch = watchNavigation(api, 1, { startMs: 30 });
+  fire("before", { url: "https://b.test/", frameId: 4 });
+  fire("before", { url: "about:blank" });
+  assert.equal(await watch.settle(), "");
 });
 
 test("same-document changes are reported without waiting for a load", async () => {
