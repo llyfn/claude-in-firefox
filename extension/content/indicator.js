@@ -98,7 +98,7 @@
     },
   };
 
-  globalThis.browser?.runtime?.sendMessage({ type: "indicator.query" }).then((reply) => {
+  browser.runtime.sendMessage({ type: "indicator.query" }).then((reply) => {
     if (reply && "state" in reply) cf.indicator.session({ state: reply.state });
   }, () => {});
 })();

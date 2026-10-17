@@ -58,6 +58,7 @@ export function createControl({ sessions, onChange = async () => {}, onClosed = 
       controllers.get(sessionId)?.abort();
       controllers.delete(sessionId);
       await sessions.setStopped(sessionId, true);
+      stopped.delete(sessionId);
       await onChange(sessionId);
     },
 
@@ -68,7 +69,7 @@ export function createControl({ sessions, onChange = async () => {}, onClosed = 
     },
 
     async close(sessionId) {
-      const tabs = await sessions.sessionTabs(sessionId);
+      const tabs = await sessions.sessionTabs(sessionId).catch(() => []);
       await sessions.close(sessionId);
       controllers.get(sessionId)?.abort();
       controllers.delete(sessionId);
