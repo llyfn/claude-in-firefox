@@ -20,10 +20,13 @@ const COUNT_FRAMES = `(() => {
 })()`;
 
 // The content router answers every op, unknown ones with an error, once the frame's content scripts run.
-const answers = (api, tabId, frameId, timeoutMs) => Promise.race([
-  api.tabs.sendMessage(tabId, { op: "ping" }, { frameId }).then(() => true, () => false),
-  new Promise((resolve) => setTimeout(resolve, timeoutMs, false)),
-]);
+function answers(api, tabId, frameId, timeoutMs) {
+  let timer;
+  return Promise.race([
+    api.tabs.sendMessage(tabId, { op: "ping" }, { frameId }).then(() => true, () => false),
+    new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs, false); }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 // Out-of-process iframes register their frame ids after the top-level load event, can still show the initial about:blank then,
 // and once loaded, can take a moment before their content scripts listen. Until then nothing can be injected into them.
