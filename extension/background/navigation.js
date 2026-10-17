@@ -12,14 +12,22 @@ export async function tabShowing(api, tabId, url) {
   return tab;
 }
 
-// Out-of-process iframes register their frame ids after the top-level load event.
+// Resolves to [frames, navigating]: the page's frames, and those expected to leave the initial about:blank. Frames without a src stay blank, and lazy ones load only when scrolled into view.
+const COUNT_FRAMES = `(() => {
+  const frames = [...document.querySelectorAll("iframe, frame")];
+  const navigating = frames.filter((f) => f.getAttribute("loading")?.toLowerCase() !== "lazy" && (f.hasAttribute("srcdoc") || !/^\\s*(about:blank)?\\s*$/i.test(f.getAttribute("src") ?? "")));
+  return [frames.length, navigating.length];
+})()`;
+
+// Out-of-process iframes register their frame ids after the top-level load event, and can still show the initial about:blank then, where nothing can be injected.
 export async function framesSettled(api, tabId) {
-  const counted = await api.tabs.executeScript(tabId, { frameId: 0, code: 'document.querySelectorAll("iframe, frame").length' }).catch(() => null);
-  const expected = counted?.[0];
+  const counted = await api.tabs.executeScript(tabId, { frameId: 0, code: COUNT_FRAMES }).catch(() => null);
+  const [expected, navigating] = counted?.[0] ?? [];
   if (!(expected > 0)) return;
   for (let waited = 0; waited < 1000; waited += 50) {
     const frames = await api.webNavigation.getAllFrames({ tabId }).catch(() => null);
-    if (!frames || frames.filter((f) => f.parentFrameId === 0).length >= expected) return;
+    const children = frames?.filter((f) => f.parentFrameId === 0);
+    if (!children || (children.length >= expected && children.filter((f) => f.url !== "about:blank").length >= navigating)) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }

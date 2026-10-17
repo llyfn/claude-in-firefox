@@ -19,7 +19,7 @@ function fakeApi({ tab = { id: 1, url: "https://b.test/", title: "B", status: "c
         if (closed) throw new Error(`Invalid tab ID: ${id}`);
         return tab;
       },
-      executeScript: async () => [0],
+      executeScript: async () => [[0, 0]],
       onRemoved: event("removed"),
     },
   };
@@ -127,7 +127,7 @@ test("a tab that closes itself without navigating reports that it closed", async
 test("framesSettled waits until the child frame is registered", async () => {
   const polls = [[{ frameId: 0, parentFrameId: -1 }], [{ frameId: 0, parentFrameId: -1 }, { frameId: 7, parentFrameId: 0 }]];
   let calls = 0;
-  const api = { tabs: { executeScript: async () => [1] }, webNavigation: { getAllFrames: async () => polls[Math.min(calls++, polls.length - 1)] } };
+  const api = { tabs: { executeScript: async () => [[1, 1]] }, webNavigation: { getAllFrames: async () => polls[Math.min(calls++, polls.length - 1)] } };
   await framesSettled(api, 1);
   assert.equal(calls, 2);
 });
