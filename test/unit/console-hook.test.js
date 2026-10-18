@@ -26,14 +26,14 @@ test("console formatting shows getters without invoking them and marks cycles", 
   assert.equal(ran, false);
 });
 
-test("console formatting stops at depth 3, 100 array items and 16384 characters", () => {
+test("console formatting stops at depth 3, 100 array items and 2000 characters", () => {
   const { format } = hook();
   assert.equal(format({ l1: { l2: { l3: { l4: { l5: 1 } } } } }), '{"l1":{"l2":{"l3":{"l4":[Object]}}}}');
   const long = format(Array.from({ length: 250 }, (_, i) => i));
   assert.match(long, /^\[0,1,/);
   assert.match(long, /,99,…150 more\]$/);
   const wide = Array.from({ length: 100 }, () => Array.from({ length: 100 }, () => "x".repeat(50)));
-  assert.ok(format(wide).length < 17_000);
+  assert.ok(format(wide).length < 2_100);
 });
 
 test("console queue keeps 1000 entries per flush and reports how many were dropped", async () => {
@@ -47,6 +47,18 @@ test("console queue keeps 1000 entries per flush and reports how many were dropp
   assert.equal(entries.length, 1001);
   assert.equal(entries[999].text, "m999");
   assert.equal(entries[1000].text, "[5 console messages dropped]");
+});
+
+test("a huge message and a huge page URL are sent truncated with a marker", async () => {
+  const w = loadContent("", ["console-hook.js"], { url: `https://shop.test/?${"y".repeat(100_000)}` });
+  const sent = [];
+  w.browser = { runtime: { sendMessage: (message) => { sent.push(message); return Promise.resolve(); } } };
+  w.__cf.consoleHook.record("log", "x".repeat(100_000));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const [entry] = sent[0].entries;
+  assert.match(entry.text, /^x+…\[truncated\]$/);
+  assert.match(entry.url, /^https:\/\/shop\.test\/\?y+…\[truncated\]$/);
+  assert.ok(entry.text.length + entry.url.length < 10_000, `${entry.text.length + entry.url.length} characters sent`);
 });
 
 test("error stacks are limited to 10 lines and an unreadable stack is skipped", () => {

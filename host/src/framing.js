@@ -34,14 +34,11 @@ export class Decoder {
 export function onMessages(stream, handler, onError = (err) => stream.destroy(err)) {
   const decoder = new Decoder();
   stream.on("data", (chunk) => {
-    let messages;
     try {
-      messages = decoder.push(chunk);
+      for (const msg of decoder.push(chunk)) if (typeof msg === "object" && msg !== null) handler(msg);
     } catch (err) {
       onError(err);
-      return;
     }
-    for (const msg of messages) handler(msg);
   });
 }
 

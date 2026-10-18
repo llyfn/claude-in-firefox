@@ -6,6 +6,11 @@ const originOf = (url) => {
   }
 };
 const clock = (ms) => new Date(ms).toTimeString().slice(0, 8);
+// Pages choose console text, page URLs and request URLs, so each is cut to MAX_TEXT characters:
+// a tab holds at most 2 × maxConsole + maxNetwork of them. A slice shares the characters of the
+// string it came from and keeps all of it alive, so the kept part is copied through JSON.
+const MAX_TEXT = 2_000;
+const clip = (text) => (text.length > MAX_TEXT ? JSON.parse(JSON.stringify(`${text.slice(0, MAX_TEXT)}…[truncated]`)) : text);
 
 function makeMatcher(pattern) {
   if (!pattern) return () => true;
@@ -32,7 +37,7 @@ export function createLogStore({ maxConsole = 10_000, maxNetwork = 1_000 } = {})
   return {
     addConsole(tabId, entries) {
       const state = entry(tabId);
-      state.console.push(...entries);
+      state.console.push(...entries.map((m) => ({ ...m, text: clip(m.text), url: clip(m.url) })));
       if (state.console.length > maxConsole) state.console.splice(0, state.console.length - maxConsole);
     },
     committed(tabId, url) {
@@ -49,7 +54,7 @@ export function createLogStore({ maxConsole = 10_000, maxNetwork = 1_000 } = {})
         state.network.clear();
         state.networkOrigin = originOf(url);
       }
-      state.network.set(requestId, { method, url, type, status: "pending" });
+      state.network.set(requestId, { method, url: clip(url), type, status: "pending" });
       if (state.network.size > maxNetwork) state.network.delete(state.network.keys().next().value);
     },
     requestFinished(tabId, requestId, status) {

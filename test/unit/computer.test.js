@@ -69,6 +69,13 @@ test("links that would open a new tab open in the clicked tab's window", async (
   assert.deepEqual(grouped, []);
 });
 
+test("a click opens at most one new tab and says how many new-tab links it did not open", async () => {
+  const opened = Array.from({ length: 40 }, (_, i) => `https://evil.test/${i}`);
+  const { run, created } = setup({ "0:input.click": { opened, point: { x: 1, y: 2 } } });
+  assert.equal(await run({ action: "left_click", ref: "ref_4" }), "Clicked ref_4 (link opened in new tab 51) → 39 more new-tab link(s) from this click were not opened");
+  assert.deepEqual(created, [{ url: "https://evil.test/0", openerTabId: 1, windowId: 3, active: false }]);
+});
+
 test("reload chords reload the tab and other keys report what was pressed", async () => {
   const { run, calls } = setup({ "0:input.keys": (args) => (args.spec === "cmd+shift+r" ? { reload: { bypassCache: true } } : {}) });
   assert.equal(await run({ action: "key", text: "cmd+shift+r" }), "Reloaded the tab (bypassing the cache)");
