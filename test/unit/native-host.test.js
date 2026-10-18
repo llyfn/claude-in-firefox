@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { once } from "node:events";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -104,6 +105,25 @@ test("a null frame from a client is ignored and the host keeps serving it", asyn
   h.input.write(encode({ type: "result", id: "1:1", content: [], isError: false }));
   assert.deepEqual(await client.messages.next(), { type: "result", id: 1, content: [], isError: false });
   client.socket.destroy();
+});
+
+test("a client whose frame makes the host throw is disconnected and other clients are still served", async (t) => {
+  const h = await startHost();
+  t.after(() => h.host.close());
+  const a = await connectClient(h.socketPath);
+  const b = await connectClient(h.socketPath);
+  a.socket.on("error", () => {});
+  b.send({ type: "hello", sessionId: "B" });
+  a.send({ type: "hello", sessionId: "A" });
+  a.send({ type: "call", id: { toString: 0 }, sessionId: "A", tool: "t", args: {} });
+  await once(a.socket, "close");
+  assert.deepEqual(await h.fromHost.next(), { type: "session_closed", sessionId: "A" });
+  b.send({ type: "call", id: 7, sessionId: "B", tool: "t", args: {} });
+  const call = await h.fromHost.next();
+  assert.deepEqual([call.type, call.sessionId], ["call", "B"]);
+  h.input.write(encode({ type: "result", id: call.id, content: [], isError: false }));
+  assert.deepEqual(await b.messages.next(), { type: "result", id: 7, content: [], isError: false });
+  b.socket.destroy();
 });
 
 test("results go only to the client that made the call", async (t) => {

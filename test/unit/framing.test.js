@@ -44,6 +44,20 @@ test("onMessages skips frames that are not objects and still delivers the next o
   assert.deepEqual(received, [{ type: "hello" }]);
 });
 
+test("a handler that throws is reported through onError and the rest of that chunk is dropped", async () => {
+  const stream = new PassThrough();
+  const received = [];
+  const errors = [];
+  onMessages(stream, (msg) => {
+    received.push(msg);
+    if (msg.n === 1) throw new TypeError("bad frame");
+  }, (err) => errors.push(err));
+  stream.write(Buffer.concat([{ n: 1 }, { n: 2 }].map(encode)));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(received, [{ n: 1 }]);
+  assert.deepEqual(errors.map((err) => err.message), ["bad frame"]);
+});
+
 test("small messages are not split", () => {
   const msg = { type: "call", args: { a: 1 } };
   assert.deepEqual(splitForFirefox(msg, 1), [msg]);
