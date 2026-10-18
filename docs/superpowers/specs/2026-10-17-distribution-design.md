@@ -66,7 +66,7 @@ Unless `--no-claude`, when `claude` is on PATH: `claude mcp remove --scope user 
 ## 5. Transport
 
 - `bridgeAddress({ platform, appDir })` in `paths.js`:
-  - macOS/Linux: `/tmp/claude-firefox-bridge-<uid>/bridge.sock`, unchanged, with the existing directory checks.
+  - macOS/Linux: `<appDir>/run/bridge.sock`, with `appDir` derived from `os.userInfo().homedir` rather than `HOME`, or `/tmp/claude-firefox-bridge-<uid>/bridge.sock` when that path is longer than 103 bytes, with the existing directory checks on the socket's directory. Uninstall removes `run/` with the app directory.
   - Windows: the contents of `<appDir>\pipe-name`. A missing file is an error that says to run `claude-firefox install`.
 - `bridgeKey({ platform, appDir })` in `paths.js`: `null` on macOS/Linux; on Windows the contents of `<appDir>\pipe-key`, and a missing or malformed file is an error that says to run install.
 - Windows has no equivalent of the socket directory's 0700 permissions, and Node cannot set a named pipe's access list. Pipe names are not secret: any local user can list them (`Get-ChildItem \\.\pipe\`). The default pipe access list gives other users read access only, so they cannot send calls to the host. Any local user can, however, create a pipe with the bridge's name while the host is down and pose as the host, receiving the MCP server's calls (typed text, URLs, uploaded files) and answering them. The key handshake stops that:

@@ -95,7 +95,7 @@ claude-in-firefox/
 
 **`native-host.js`** — started by Firefox via the native-messaging manifest (`argv`: manifest path, extension id).
 
-- Socket: `/tmp/claude-firefox-bridge-<uid>/bridge.sock`. A fixed `/tmp` path (not `$TMPDIR`) because the Firefox-spawned and Claude-Code-spawned processes must agree and Claude Code may override `TMPDIR`. Directory created with mode 0700 and verified to be owned by the current uid and not a symlink; socket chmod 0600.
+- Socket: `<appDir>/run/bridge.sock`, with the app directory derived from the home folder in the password database (`os.userInfo().homedir`), never from `HOME` or `TMPDIR`, because the Firefox-spawned and Claude-Code-spawned processes must agree and are started with different environments. A socket path longer than 103 bytes (the macOS limit; Linux allows 107) falls back to `/tmp/claude-firefox-bridge-<uid>/bridge.sock`. The socket's directory is created with mode 0700 and verified to be owned by the current uid and not a symlink; socket chmod 0600.
 - On start, if the socket path exists: try to connect. If the connection is refused, unlink it and listen. If it connects, another host owns it → log to stderr and exit 1 (the extension will retry).
 - Assigns each connected MCP client a numeric `clientId`. Rewrites request ids to `"<clientId>:<id>"` before forwarding to Firefox and routes results back by that prefix.
 - Sends `{type:"session_closed", sessionId}` to Firefox when a client disconnects.
