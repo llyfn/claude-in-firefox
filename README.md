@@ -117,13 +117,17 @@ npm run build                          # package the add-on into web-ext-artifac
 
 `.github/workflows/release.yml` signs the add-on with addons.mozilla.org as an unlisted add-on, publishes `@llyfn/claude-in-firefox` to npm, and attaches the signed `.xpi` to a GitHub release.
 
-One-time setup: set the repository secrets `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`, which are the API credentials from <https://addons.mozilla.org/developers/addon/api/key/>, and `NPM_TOKEN`, an npm automation token for the `@llyfn` scope.
+One-time setup: store three secrets in the repository's `release` environment, for example with `gh secret set NPM_TOKEN --env release`:
+- `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`, the API credentials from <https://addons.mozilla.org/developers/addon/api/key/>;
+- `NPM_TOKEN`, an npm automation token for the `@llyfn` scope.
+
+Only `v*` tags on `main` can use that environment, and each run waits for a maintainer's approval.
 
 For each release:
 
 1. Bump `version` in both `extension/manifest.json` and `package.json`. addons.mozilla.org won't sign a version twice.
 2. Commit, then push a matching tag, for example `git tag v0.3.0 && git push origin v0.3.0`.
-3. The workflow checks that the versions match the tag, runs the tests and lint, checks the npm token, signs the add-on, publishes to npm, and creates the release.
+3. Approve the run in the Actions tab. The workflow then checks that the versions match the tag, runs the tests and lint, checks the npm token, signs the add-on, publishes to npm with provenance, and creates the release.
 
 </details>
 
