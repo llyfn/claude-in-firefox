@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import v8 from "node:v8";
+import vm from "node:vm";
 import { createLogStore, installLogListeners } from "../../extension/background/logs.js";
 
 const message = (level, text) => ({ level, text, url: "u", time: 0 });
@@ -73,4 +75,46 @@ test("a top-level commit of another origin still starts a fresh console buffer",
   log("first page");
   commit("https://b.test/");
   assert.match(store.readConsole(1), /^No console messages found\.$/);
+});
+
+const stackTrace = ["TypeError: cart is undefined (https://shop.test/static/js/main.3f2a1b9c.js:3:7)", ...Array.from({ length: 10 }, (_, i) => `    dispatchDiscreteEvent${i}@https://cdn.shop.test/static/js/vendors-node_modules_react-dom_cjs_react-dom_development_js.3f2a1b9c.chunk.js:${i + 1}:${10_000 + i}`)].join("\n");
+const longUrl = `https://shop.test/search?${"filter=colour%3Ablue&".repeat(80)}`;
+
+test("a huge console message and page URL are stored truncated with a marker, and a stack trace and a long URL are kept whole", () => {
+  const store = createLogStore();
+  store.committed(1, "https://shop.test/");
+  store.addConsole(1, [
+    { level: "error", text: stackTrace, url: longUrl, time: 0 },
+    { level: "log", text: "x".repeat(1_000_000), url: `https://shop.test/?${"y".repeat(1_000_000)}`, time: 0 },
+  ]);
+  const [ordinary, huge] = store.readConsole(1).split(/\n(?=\[\d+\] )/).slice(1);
+  assert.match(ordinary, /^\[1\] \[[\d:]+\] \[ERROR\] /);
+  assert.equal(ordinary.replace(/^\[1\] \[[\d:]+\] \[ERROR\] /, ""), `(${longUrl}) ${stackTrace}`);
+  assert.match(huge, /^\[2\] \[[\d:]+\] \[LOG\] \(https:\/\/shop\.test\/\?y+…\[truncated\]\) x+…\[truncated\]$/);
+  assert.ok(huge.length < 10_000, `the stored message is ${huge.length} characters`);
+});
+
+test("a huge request URL is stored truncated with a marker and a long one is kept whole", () => {
+  const store = createLogStore();
+  store.requestStarted(1, { requestId: "1", method: "GET", url: longUrl, type: "xmlhttprequest" });
+  store.requestStarted(1, { requestId: "2", method: "GET", url: `https://shop.test/?${"z".repeat(1_000_000)}`, type: "image" });
+  const [ordinary, huge] = store.readNetwork(1).split("\n\n")[1].split(/\n(?=\d+\. url: )/);
+  assert.equal(ordinary, `1. url: ${longUrl}\n   method: GET\n   statusCode: pending`);
+  assert.match(huge, /^2\. url: https:\/\/shop\.test\/\?z+…\[truncated\]\n/);
+  assert.ok(huge.length < 10_000, `the stored request is ${huge.length} characters`);
+});
+
+test("truncated console messages and request URLs do not keep the full strings alive", () => {
+  v8.setFlagsFromString("--expose-gc");
+  const gc = vm.runInNewContext("gc");
+  const store = createLogStore();
+  gc();
+  const before = process.memoryUsage().heapUsed;
+  for (let i = 0; i < 500; i++) {
+    store.addConsole(1, [{ level: "log", text: "x".repeat(100_000) + i, url: `https://shop.test/?${"y".repeat(100_000)}${i}`, time: 0 }]);
+    store.requestStarted(1, { requestId: String(i), method: "GET", url: `https://shop.test/?${"z".repeat(100_000)}${i}`, type: "image" });
+  }
+  gc();
+  const retainedMB = (process.memoryUsage().heapUsed - before) / 1e6;
+  assert.ok(retainedMB < 30, `${retainedMB.toFixed(1)} MB retained for 1500 strings of about 2000 characters`);
 });

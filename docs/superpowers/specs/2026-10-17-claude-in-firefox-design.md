@@ -275,9 +275,9 @@ Removed before distribution: running code strings received at runtime conflicts 
 
 ### 6.8 Console and network logs (`content/console-hook.js`, `background/logs.js`)
 
-- **Console** (MV2 isolated content script, `document_start`, all frames, `match_about_blank`): for `log, info, warn, error, debug`, replace `window.wrappedJSObject.console[level]` with an `exportFunction`-ed wrapper that records `{level, text, url, line?}` then calls the original. Also listens for window `error` and `unhandledrejection`. Argument stringification: strings verbatim; Error → `name: message`; others `JSON.stringify` with fallback `String()`; message capped at 16 384 chars. Batched to the background every 250 ms.
+- **Console** (MV2 isolated content script, `document_start`, all frames, `match_about_blank`): for `log, info, warn, error, debug`, replace `window.wrappedJSObject.console[level]` with an `exportFunction`-ed wrapper that records `{level, text, url, line?}` then calls the original. Also listens for window `error` and `unhandledrejection`. Argument stringification: strings verbatim; Error → `name: message`; others `JSON.stringify` with fallback `String()`; message capped at 2 000 chars. Batched to the background every 250 ms.
 - **Network**: `webRequest.onBeforeRequest` / `onCompleted` / `onErrorOccurred` for `<all_urls>`, `tabId ≥ 0` → `{requestId, method, url, type, status|error}`.
-- Buffers: per tab, 10 000 console / 1 000 network entries (oldest dropped); reset on `webNavigation.onCommitted` (frameId 0) when the origin changes; deleted on tab close. Capture runs for all tabs from the moment the extension loads.
+- Buffers: per tab, 10 000 console / 1 000 network entries (oldest dropped), with each console message, its page URL and each request URL cut to 2 000 chars plus a `…[truncated]` marker; reset on `webNavigation.onCommitted` (frameId 0) when the origin changes; deleted on tab close. Capture runs for all tabs from the moment the extension loads.
 - Output formats match CiC: `[n] [HH:MM:SS] [LEVEL] (url:line) text` and `n. url: …\n   method: …\n   statusCode: …|pending|failed (<error>)`.
 
 ### 6.9 Indicator (`content/indicator.js`, top frame only)
