@@ -10,7 +10,7 @@ function fakeApi({ tab = { id: 1, url: "https://b.test/", title: "B", status: "c
   };
   const api = {
     webNavigation: {
-      onBeforeNavigate: event("before"), onCompleted: event("completed"), onErrorOccurred: event("error"),
+      onBeforeNavigate: event("before"), onCommitted: event("committed"), onCompleted: event("completed"), onErrorOccurred: event("error"),
       onHistoryStateUpdated: event("history"), onReferenceFragmentUpdated: event("fragment"),
       getAllFrames: async () => [],
     },
@@ -44,8 +44,20 @@ test("a load that starts and completes reports the final URL and title", async (
   const { api, fire } = fakeApi();
   const watch = watchNavigation(api, 1, { startMs: 50 });
   fire("before", { url: "https://b.test/" });
+  fire("committed", { url: "https://b.test/" });
   setTimeout(() => fire("completed", { url: "https://b.test/" }), 5);
   assert.equal(await watch.settle(), '→ Navigated to https://b.test/ — "B"');
+});
+
+test("a load that completes without committing a document, as a download does, settles without waiting for the tab to show it", async () => {
+  const { api, fire, live } = fakeApi({ tab: { id: 1, url: "https://a.test/page", title: "A", status: "complete" } });
+  const watch = watchNavigation(api, 1, { startMs: 50 });
+  fire("before", { url: "https://a.test/export" });
+  fire("completed", { url: "https://a.test/export" });
+  const started = Date.now();
+  assert.equal(await watch.settle(), "");
+  assert.ok(Date.now() - started < 500, `settle took ${Date.now() - started} ms`);
+  assert.equal(live(), 0);
 });
 
 test("a process-switch abort is not the end of the load", async () => {
