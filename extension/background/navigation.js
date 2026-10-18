@@ -78,9 +78,11 @@ export function waitForNavigation(api, tabId, timeoutMs, acceptBlank, signal) {
 
 // Listening starts before the action runs, so a navigation the action triggers synchronously is not missed.
 export function watchNavigation(api, tabId, { signal, startMs = SETTLE_START_MS, loadMs = SETTLE_LOAD_MS } = {}) {
-  const { onBeforeNavigate, onCompleted, onErrorOccurred, onHistoryStateUpdated, onReferenceFragmentUpdated } = api.webNavigation;
+  const { onBeforeNavigate, onCommitted, onCompleted, onErrorOccurred, onHistoryStateUpdated, onReferenceFragmentUpdated } = api.webNavigation;
   let started = null;
+  let committed = false;
   let finished = null;
+  let uncommitted = false;
   let sameDocument = null;
   let closed = false;
   let wake = () => {};
@@ -90,7 +92,8 @@ export function watchNavigation(api, tabId, { signal, startMs = SETTLE_START_MS,
     [onBeforeNavigate, (details) => { if (top(details) && details.url !== "about:blank") { started = details.url; wake(); } }],
     [onHistoryStateUpdated, onSameDocument],
     [onReferenceFragmentUpdated, onSameDocument],
-    [onCompleted, (details) => { if (top(details) && started) { finished = details.url; wake(); } }],
+    [onCommitted, (details) => { if (top(details) && started) committed = true; }],
+    [onCompleted, (details) => { if (top(details) && started) { finished = details.url; uncommitted = !committed; wake(); } }],
     [onErrorOccurred, (details) => { if (top(details) && started && details.error !== BINDING_ABORTED) { finished = details.url; wake(); } }],
     [api.tabs.onRemoved, (removedId) => { if (removedId === tabId) { closed = true; wake(); } }],
   ];
@@ -120,6 +123,8 @@ export function watchNavigation(api, tabId, { signal, startMs = SETTLE_START_MS,
         await until(() => finished || closed, loadMs);
         if (closed) return TAB_CLOSED;
         if (!finished) return `→ Still loading after ${loadMs / 1000}s: ${started}`;
+        // A response saved as a download completes its load without committing a document, so the tab keeps its page.
+        if (uncommitted) return "";
         const tab = await tabShowing(api, tabId, finished).catch(() => null);
         if (!tab) return TAB_CLOSED;
         await framesSettled(api, tabId);
