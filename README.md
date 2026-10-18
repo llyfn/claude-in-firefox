@@ -86,7 +86,7 @@ Each client process is its own session, with its own window.
 
 ## Troubleshooting
 
-- **"Firefox extension not connected".** Check that Firefox is running, the add-on is installed, and you ran the install command. Native host errors appear in the Browser Console (⌘⇧J on macOS, Ctrl+Shift+J elsewhere), prefixed `claude-firefox native host:`.
+- **"Firefox extension not connected".** Check that Firefox is running, the add-on is installed, and you ran the install command. If you reinstalled after an uninstall, restart Firefox. Native host errors appear in the Browser Console (⌘⇧J on macOS, Ctrl+Shift+J elsewhere), prefixed `claude-firefox native host:`.
 - **On Windows, "could not prove that it holds the key in pipe-key".** Restart Firefox: the bridge may still be running from before your last install. If that doesn't help, run the install command again, which recreates `pipe-name` and `pipe-key` in the app directory if they are missing or damaged. If the error persists, another program may be using the bridge's pipe name.
 - **It stopped working after a Node upgrade.** The installer remembers the first `node` on your PATH. Run the install command again.
 - **"Cannot access this page".** Firefox reserves that page for itself (see [Safety](#safety)).
