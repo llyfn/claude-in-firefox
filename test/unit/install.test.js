@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -86,7 +86,7 @@ test("install from a clone packs it, installs the tarball into the app directory
   assert.equal(result.claudeStatus, "registered");
 
   assert.equal(result.wrapperPath, path.join(appDir, "native-host"));
-  assert.equal(fs.readFileSync(result.wrapperPath, "utf8"), `#!/bin/sh\nexec "/opt/node/bin/node" "${path.join(pkgDir, "host/src/native-host.js")}" "$@"\n`);
+  assert.equal(fs.readFileSync(result.wrapperPath, "utf8"), `#!/bin/sh\nexec '/opt/node/bin/node' '${path.join(pkgDir, "host/src/native-host.js")}' "$@"\n`);
   assert.equal(result.manifestPath, path.join(home, "Library/Application Support/Mozilla/NativeMessagingHosts/claude_firefox_bridge.json"));
   assert.deepEqual(JSON.parse(fs.readFileSync(result.manifestPath, "utf8")), {
     name: "claude_firefox_bridge",
@@ -96,12 +96,32 @@ test("install from a clone packs it, installs the tarball into the app directory
     allowed_extensions: ["claude-firefox-bridge@local"],
   });
   assert.deepEqual(result.mcpConfig, { mcpServers: { firefox: { command: "/opt/node/bin/node", args: [cli, "mcp"] } } });
-  assert.equal(result.claudeCommand, `claude mcp add --scope user firefox -- "/opt/node/bin/node" "${cli}" mcp`);
+  assert.equal(result.claudeCommand, `claude mcp add --scope user firefox -- '/opt/node/bin/node' '${cli}' mcp`);
 });
 
 test("the macOS and Linux wrapper is executable", { skip: process.platform === "win32" && "Windows has no Unix file modes" }, async () => {
   const result = await install({ homeDir: tmp(), platform: "linux", env: { PATH: "", npm_execpath: "/n/npm-cli.js" }, nodePath: "/usr/bin/node", packageRoot: REPO, run: fakeRun().run, claude: false });
   assert.equal(fs.statSync(result.wrapperPath).mode & 0o777, 0o755);
+});
+
+test("the macOS and Linux wrapper and the printed claude command quote paths for the shell", { skip: process.platform === "win32" && "runs the wrapper with /bin/sh" }, async () => {
+  const root = tmp();
+  const nodeDir = path.join(root, "it's $(touch pwned) `touch pwned2` 100%");
+  fs.mkdirSync(nodeDir);
+  const nodePath = path.join(nodeDir, "node");
+  fs.writeFileSync(nodePath, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n", { mode: 0o755 });
+  const home = path.join(root, "o'brien home");
+  const result = await install({ homeDir: home, platform: "linux", env: { PATH: "", npm_execpath: "/n/npm-cli.js" }, nodePath, packageRoot: REPO, run: fakeRun().run, claude: false });
+
+  const quotedNode = `'${root}/it'\\''s $(touch pwned) \`touch pwned2\` 100%/node'`;
+  const quotedPkg = `'${root}/o'\\''brien home/.local/share/claude-in-firefox/node_modules/@llyfn/claude-in-firefox`;
+  assert.equal(fs.readFileSync(result.wrapperPath, "utf8"), `#!/bin/sh\nexec ${quotedNode} ${quotedPkg}/host/src/native-host.js' "$@"\n`);
+  assert.equal(result.claudeCommand, `claude mcp add --scope user firefox -- ${quotedNode} ${quotedPkg}/host/src/cli.js' mcp`);
+
+  const cwd = tmp();
+  const { stdout } = spawnSync(result.wrapperPath, ["--from-firefox"], { cwd, encoding: "utf8" });
+  assert.equal(stdout, `${path.join(home, ".local/share/claude-in-firefox/node_modules/@llyfn/claude-in-firefox/host/src/native-host.js")}\n--from-firefox\n`);
+  assert.deepEqual(fs.readdirSync(cwd), []);
 });
 
 test("install from a published copy installs its own version from the registry", async () => {
@@ -163,7 +183,7 @@ test("--no-claude leaves Claude Code alone, and a missing claude prints the comm
   const missing = fakeRun();
   const b = await install({ homeDir: tmp(), platform: "linux", env: { PATH: "", npm_execpath: "/npm/bin/npm-cli.js" }, nodePath: "/usr/bin/node", packageRoot: REPO, run: missing.run });
   assert.equal(b.claudeStatus, "not-found");
-  assert.match(b.claudeCommand, /^claude mcp add --scope user firefox -- "\/usr\/bin\/node" ".*cli\.js" mcp$/);
+  assert.match(b.claudeCommand, /^claude mcp add --scope user firefox -- '\/usr\/bin\/node' '.*cli\.js' mcp$/);
 });
 
 test("a failing claude mcp remove is ignored and a failing add is reported without aborting the install", async () => {
@@ -174,7 +194,7 @@ test("a failing claude mcp remove is ignored and a failing add is reported witho
   assert.equal(bad.claudeStatus, "failed");
   assert.match(bad.claudeError, /failed/);
   assert.equal(fs.existsSync(bad.manifestPath), true);
-  assert.match(bad.claudeCommand, /^claude mcp add --scope user firefox -- "\/usr\/bin\/node" ".*cli\.js" mcp$/);
+  assert.match(bad.claudeCommand, /^claude mcp add --scope user firefox -- '\/usr\/bin\/node' '.*cli\.js' mcp$/);
 });
 
 test("on Linux the app directory is under ~/.local/share and the manifest under ~/.mozilla", async () => {
@@ -192,16 +212,17 @@ test("on Windows install writes a .cmd wrapper, the pipe name and the manifest i
   const appDir = path.join(local, "claude-in-firefox");
   assert.equal(result.wrapperPath, path.join(appDir, "native-host.cmd"));
   assert.equal(fs.readFileSync(result.wrapperPath, "utf8"), `@echo off\r\n"C:\\node\\node.exe" "%~dp0node_modules\\@llyfn\\claude-in-firefox\\host\\src\\native-host.js" %*\r\n`);
+  assert.equal(result.claudeCommand, `claude mcp add --scope user firefox -- "C:\\node\\node.exe" "${path.join(appDir, "node_modules/@llyfn/claude-in-firefox/host/src/cli.js")}" mcp`);
   assert.match(fs.readFileSync(path.join(appDir, "pipe-name"), "utf8"), PIPE);
   assert.equal(result.manifestPath, path.join(appDir, "claude_firefox_bridge.json"));
   assert.deepEqual([calls.at(-1).command, ...calls.at(-1).args], ["reg", "add", "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\claude_firefox_bridge", "/ve", "/t", "REG_SZ", "/d", result.manifestPath, "/f"]);
 });
 
-test("on Windows a percent sign in the node path is escaped and a non-ASCII one is warned about", async () => {
+test("on Windows the node path is double-quoted with percent signs doubled, and a non-ASCII one is warned about", async () => {
   const env = { PATH: "", LOCALAPPDATA: tmp(), npm_execpath: "C:/npm/npm-cli.js" };
   const options = { homeDir: tmp(), platform: "win32", env, packageRoot: REPO, run: fakeRun().run, claude: false };
-  const plain = await install({ ...options, nodePath: "C:\\100%\\node.exe" });
-  assert.match(fs.readFileSync(plain.wrapperPath, "utf8"), /^@echo off\r\n"C:\\100%%\\node\.exe" /);
+  const plain = await install({ ...options, nodePath: "C:\\it's $(touch x) `y` 100%\\node.exe" });
+  assert.equal(fs.readFileSync(plain.wrapperPath, "utf8"), `@echo off\r\n"C:\\it's $(touch x) \`y\` 100%%\\node.exe" "%~dp0node_modules\\@llyfn\\claude-in-firefox\\host\\src\\native-host.js" %*\r\n`);
   assert.deepEqual(plain.warnings, []);
   const odd = await install({ ...options, nodePath: "C:\\Users\\\u00e9\\node.exe" });
   assert.deepEqual(odd.warnings, ["Node is installed at a path with non-ASCII characters (C:\\Users\\\u00e9\\node.exe); Firefox may fail to start the native host. Install Node in a path with only ASCII characters if the add-on cannot connect."]);

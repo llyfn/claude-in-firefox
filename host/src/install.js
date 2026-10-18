@@ -19,6 +19,7 @@ const succeeds = (fn) => {
 };
 
 const quoteForCmd = (arg) => (/^[\w@%+=:,./\\-]+$/.test(arg) ? arg : `"${String(arg).replace(/"/g, '""')}"`);
+const quoteForSh = (arg) => `'${arg.replace(/'/g, "'\\''")}'`;
 
 export function runCommand(command, args, { cwd } = {}) {
   // Windows runs .cmd and .bat files only through the shell, which needs the arguments quoted for cmd.exe.
@@ -117,7 +118,7 @@ export async function install({ homeDir = os.homedir(), platform = process.platf
     if (!succeeds(() => bridgeKey({ platform, appDir }))) fs.writeFileSync(path.join(appDir, PIPE_KEY_FILE), `${randomBytes(32).toString("hex")}\n`);
   } else {
     wrapperPath = path.join(appDir, "native-host");
-    fs.writeFileSync(wrapperPath, `#!/bin/sh\nexec "${nodePath}" "${hostScript}" "$@"\n`);
+    fs.writeFileSync(wrapperPath, `#!/bin/sh\nexec ${quoteForSh(nodePath)} ${quoteForSh(hostScript)} "$@"\n`);
     fs.chmodSync(wrapperPath, 0o755);
   }
 
@@ -129,7 +130,9 @@ export async function install({ homeDir = os.homedir(), platform = process.platf
   fs.rmSync(path.join(appDir, "host"), { recursive: true, force: true });
 
   const mcpArgs = [nodePath, cliScript, "mcp"];
-  const claudeCommand = `claude mcp add --scope user ${MCP_NAME} -- "${nodePath}" "${cliScript}" mcp`;
+  // cmd.exe does not treat single quotes as quotes, and a Windows path cannot contain a double quote.
+  const quote = platform === "win32" ? (arg) => `"${arg}"` : quoteForSh;
+  const claudeCommand = `claude mcp add --scope user ${MCP_NAME} -- ${quote(nodePath)} ${quote(cliScript)} mcp`;
   const claudePath = claude ? findExecutable("claude", env, platform) : null;
   let claudeError;
   let claudeStatus = claude ? "not-found" : "skipped";
