@@ -1,6 +1,8 @@
 export const SETTLE_START_MS = 500;
 export const SETTLE_LOAD_MS = 10_000;
 const TAB_CLOSED = "→ The tab closed";
+// webNavigation reports errors by number; this is NS_BINDING_ABORTED.
+const BINDING_ABORTED = "Error code 2152398850";
 
 // The tab's url and title update shortly after the webNavigation events that report the load.
 export async function tabShowing(api, tabId, url) {
@@ -58,7 +60,7 @@ export function waitForNavigation(api, tabId, timeoutMs, acceptBlank, signal) {
     const onStart = (details) => { if (mine(details)) started = true; };
     const onSameDocument = (details) => { if (mine(details)) finish(details.url); };
     const onLoadEnd = (details) => { if (started && mine(details)) finish(details.url); };
-    const onError = (details) => { if (details.error !== "NS_BINDING_ABORTED") onLoadEnd(details); };
+    const onError = (details) => { if (details.error !== BINDING_ABORTED) onLoadEnd(details); };
     const onAbort = () => finish(null);
     const listeners = [[onBeforeNavigate, onStart], [onHistoryStateUpdated, onSameDocument], [onReferenceFragmentUpdated, onSameDocument], [onCompleted, onLoadEnd], [onErrorOccurred, onError]];
     const finish = (value) => {
@@ -89,7 +91,7 @@ export function watchNavigation(api, tabId, { signal, startMs = SETTLE_START_MS,
     [onHistoryStateUpdated, onSameDocument],
     [onReferenceFragmentUpdated, onSameDocument],
     [onCompleted, (details) => { if (top(details) && started) { finished = details.url; wake(); } }],
-    [onErrorOccurred, (details) => { if (top(details) && started && details.error !== "NS_BINDING_ABORTED") { finished = details.url; wake(); } }],
+    [onErrorOccurred, (details) => { if (top(details) && started && details.error !== BINDING_ABORTED) { finished = details.url; wake(); } }],
     [api.tabs.onRemoved, (removedId) => { if (removedId === tabId) { closed = true; wake(); } }],
   ];
   for (const [event, listener] of listeners) event.addListener(listener);

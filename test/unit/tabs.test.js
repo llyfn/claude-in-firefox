@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { withScheme } from "../../extension/background/tools/tabs.js";
+import { tabTools, withScheme } from "../../extension/background/tools/tabs.js";
 import { framesSettled } from "../../extension/background/navigation.js";
 
 const top = { frameId: 0, parentFrameId: -1 };
@@ -90,6 +90,40 @@ test("framesSettled resolves when getAllFrames rejects", async () => {
     webNavigation: { getAllFrames: async () => { throw new Error("tab closed"); } },
   };
   await framesSettled(api, 1);
+});
+
+test("navigate waits for the page load when the process-switch abort arrives while the tab already reads complete", async () => {
+  const url = "http://a.test/frames.html";
+  const listeners = {};
+  const event = (name) => {
+    listeners[name] = new Set();
+    return { addListener: (l) => listeners[name].add(l), removeListener: (l) => listeners[name].delete(l) };
+  };
+  const fire = (name, details) => { for (const l of [...listeners[name]]) l({ tabId: 1, frameId: 0, url, ...details }); };
+  const api = {
+    webNavigation: {
+      onBeforeNavigate: event("before"), onCompleted: event("completed"), onErrorOccurred: event("error"),
+      onHistoryStateUpdated: event("history"), onReferenceFragmentUpdated: event("fragment"),
+    },
+    tabs: {
+      // The order Firefox reported on Windows: the page commits, then the new tab's about:blank load finishes late,
+      // then the load that the process switch aborted is reported.
+      update: async () => {
+        fire("before");
+        fire("completed", { url: "about:blank" });
+        fire("before");
+        fire("error", { error: "Error code 2152398850" });
+      },
+      get: async () => ({ id: 1, url, title: "Frames", status: "complete" }),
+      executeScript: async () => [[0, 0]],
+    },
+  };
+  let returned = false;
+  const result = tabTools({ api }).navigate.run({ tab: { id: 1 }, args: { url } }).finally(() => { returned = true; });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(returned, false);
+  fire("completed");
+  assert.equal(await result, `Navigated to ${url} — "Frames"`);
 });
 
 test("withScheme prefixes https to scheme-less URLs including host:port and keeps real schemes", () => {

@@ -52,7 +52,7 @@ test("a process-switch abort is not the end of the load", async () => {
   const { api, fire } = fakeApi();
   const watch = watchNavigation(api, 1, { startMs: 50, loadMs: 30 });
   fire("before", { url: "https://b.test/" });
-  fire("error", { url: "https://b.test/", error: "NS_BINDING_ABORTED" });
+  fire("error", { url: "https://b.test/", error: "Error code 2152398850" });
   assert.equal(await watch.settle(), "→ Still loading after 0.03s: https://b.test/");
 });
 
@@ -60,7 +60,7 @@ test("a real load error ends the wait", async () => {
   const { api, fire } = fakeApi();
   const watch = watchNavigation(api, 1, { startMs: 50, loadMs: 30 });
   fire("before", { url: "https://b.test/" });
-  fire("error", { url: "https://b.test/", error: "NS_ERROR_UNKNOWN_HOST" });
+  fire("error", { url: "https://b.test/", error: "Error code 2152398878" });
   assert.equal(await watch.settle(), '→ Navigated to https://b.test/ — "B"');
 });
 
