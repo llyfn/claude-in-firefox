@@ -15,7 +15,7 @@ You need Firefox 140 or newer and Node 20 or newer, on macOS, Linux or Windows. 
    ```bash
    npx @llyfn/claude-in-firefox install
    ```
-   This registers the bridge with Firefox and adds a `firefox` MCP server to Claude Code. Add `--no-claude` to skip the Claude Code step.
+   This registers the bridge with Firefox and adds a `firefox` MCP server to Claude Code. Add `--no-claude` to skip the Claude Code step. Run it from your home folder, not inside a project: npx puts that project's `node_modules/.bin` first on PATH, where a package could stand in for `node`.
 3. **Use it.** Start a new Claude Code session and ask it to use Firefox.
 
 ## How it works
