@@ -45,7 +45,7 @@ The package lives at `<appDir>/node_modules/@llyfn/claude-in-firefox` (`pkgDir`)
 
 1. **Source.** When `cli.js` runs from an installed package (its package root is inside a `node_modules` directory), the source is `@llyfn/claude-in-firefox@<its own version>`. When it runs from a repository clone, the source is a tarball made with `npm pack --pack-destination <temp dir>` of the clone, so development installs the same layout as users get.
 2. **Copy.** `npm install --prefix <appDir> --omit=dev --no-audit --no-fund <source>`. npm is run as `node <npm_execpath>` when `process.env.npm_execpath` is set (always the case under `npx` and `npm run`), otherwise as `npm` from PATH (through the shell on Windows).
-3. **Wrapper** in `appDir`, using the first `node` (`node.exe` on Windows) on PATH, else `process.execPath`:
+3. **Wrapper** in `appDir`, using the first `node` (`node.exe` on Windows) on PATH outside any `node_modules` folder, else `process.execPath`:
    - macOS/Linux `native-host`: `#!/bin/sh` + `exec '<node>' '<pkgDir>/host/src/native-host.js' "$@"`, each path single-quoted with `'` written as `'\''`, mode 0755.
    - Windows `native-host.cmd`: `@echo off` + `"<node>" "<pkgDir>\host\src\native-host.js" %*`, with every `%` in the node path doubled, CRLF line endings.
 4. **Windows pipe name and key.** Unless `<appDir>\pipe-name` holds a valid name, write `\\.\pipe\claude-firefox-bridge-<32 random hex chars>` to it. Unless `<appDir>\pipe-key` holds 64 lowercase hex chars, write 32 random bytes as hex to it. Valid files are kept.
@@ -54,14 +54,14 @@ The package lives at `<appDir>/node_modules/@llyfn/claude-in-firefox` (`pkgDir`)
    - Linux: `~/.mozilla/native-messaging-hosts/claude_firefox_bridge.json`
    - Windows: `<appDir>\claude_firefox_bridge.json`, plus `reg add "HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge" /ve /t REG_SZ /d "<manifest path>" /f`.
 6. **Legacy layout.** `<appDir>/host` (0.1/0.2 installs) is removed.
-7. **Claude Code.** Unless `--no-claude`, when a `claude` executable is on PATH: run `claude mcp remove --scope user firefox` (failure ignored), then `claude mcp add --scope user firefox -- <node> <pkgDir>/host/src/cli.js mcp`. Without `claude`, print that command instead, with the paths quoted as in the wrapper on macOS/Linux and double-quoted on Windows.
+7. **Claude Code.** Unless `--no-claude`, when a `claude` executable is on PATH outside any `node_modules` folder: run `claude mcp remove --scope user firefox` (failure ignored), then `claude mcp add --scope user firefox -- <node> <pkgDir>/host/src/cli.js mcp`. Without `claude`, print that command instead, with the paths quoted as in the wrapper on macOS/Linux and double-quoted on Windows.
 8. **Summary.** Print the manifest path, appDir, what happened with Claude Code, and a JSON snippet for other MCP clients: `{ "mcpServers": { "firefox": { "command": "<node>", "args": ["<pkgDir>/host/src/cli.js", "mcp"] } } }`.
 
 Updating is `npx @llyfn/claude-in-firefox@latest install`, which replaces the copy and re-registers.
 
 ## 4. Uninstall
 
-Unless `--no-claude`, when `claude` is on PATH: `claude mcp remove --scope user firefox` (a missing entry is not an error). On Windows: `reg delete "HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge" /f` (a missing key is not an error). Remove the native messaging manifest and `appDir`. Print each thing removed, and say when there was nothing to remove.
+Unless `--no-claude`, when `claude` is on PATH outside any `node_modules` folder: `claude mcp remove --scope user firefox` (a missing entry is not an error). On Windows: `reg delete "HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge" /f` (a missing key is not an error). Remove the native messaging manifest and `appDir`. Print each thing removed, and say when there was nothing to remove.
 
 ## 5. Transport
 
