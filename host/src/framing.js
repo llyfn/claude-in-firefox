@@ -41,7 +41,7 @@ export function onMessages(stream, handler, onError = (err) => stream.destroy(er
       onError(err);
       return;
     }
-    for (const msg of messages) handler(msg);
+    for (const msg of messages) if (typeof msg === "object" && msg !== null) handler(msg);
   });
 }
 

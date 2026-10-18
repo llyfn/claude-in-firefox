@@ -35,6 +35,15 @@ test("onMessages reports malformed frames through onError", async () => {
   assert.equal(errors.length, 1);
 });
 
+test("onMessages skips frames that are not objects and still delivers the next one", async () => {
+  const stream = new PassThrough();
+  const received = [];
+  onMessages(stream, (msg) => received.push(msg), (err) => assert.fail(err));
+  stream.write(Buffer.concat([null, 42, "x", true, { type: "hello" }].map(encode)));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(received, [{ type: "hello" }]);
+});
+
 test("small messages are not split", () => {
   const msg = { type: "call", args: { a: 1 } };
   assert.deepEqual(splitForFirefox(msg, 1), [msg]);

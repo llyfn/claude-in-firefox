@@ -93,6 +93,19 @@ test("with a key the host does not answer a hello without a string nonce", async
   client.socket.destroy();
 });
 
+test("a null frame from a client is ignored and the host keeps serving it", async (t) => {
+  const h = await startHost();
+  t.after(() => h.host.close());
+  const client = await connectClient(h.socketPath);
+  client.send(null);
+  client.send({ type: "hello", sessionId: "s1" });
+  client.send({ type: "call", id: 1, sessionId: "s1", tool: "t", args: {} });
+  assert.deepEqual(await h.fromHost.next(), { type: "call", id: "1:1", sessionId: "s1", tool: "t", args: {} });
+  h.input.write(encode({ type: "result", id: "1:1", content: [], isError: false }));
+  assert.deepEqual(await client.messages.next(), { type: "result", id: 1, content: [], isError: false });
+  client.socket.destroy();
+});
+
 test("results go only to the client that made the call", async (t) => {
   const h = await startHost();
   t.after(() => h.host.close());
