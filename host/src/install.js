@@ -34,11 +34,13 @@ export function runCommand(command, args, { cwd } = {}) {
   });
 }
 
+// npm and npx put node_modules/.bin folders (the project's, its ancestors' and npx's own) first on PATH,
+// where any installed package can provide a `node` or `claude`.
 export function findExecutable(name, env = process.env, platform = process.platform) {
   const extensions = platform === "win32" ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").filter(Boolean).map((ext) => ext.toLowerCase()) : [""];
   for (const entry of (env.PATH ?? env.Path ?? "").split(path.delimiter)) {
     const dir = entry.replace(/^"(.*)"$/, "$1");
-    if (!path.isAbsolute(dir)) continue;
+    if (!path.isAbsolute(dir) || dir.split(/[\\/]/).includes("node_modules")) continue;
     for (const ext of extensions) {
       const candidate = path.join(dir, `${name}${ext}`);
       try {

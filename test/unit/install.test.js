@@ -301,6 +301,21 @@ test("findExecutable checks PATH, with PATHEXT on Windows", () => {
   assert.equal(findExecutable("claude", { PATH: win, PATHEXT: ".EXE;.CMD" }, "win32"), path.join(win, "claude.cmd"));
 });
 
+test("node and claude in a node_modules folder on PATH are passed over for the ones after it", () => {
+  const root = tmp();
+  const planted = [path.join(root, "proj/node_modules/.bin"), path.join(root, "_npx/1a2b/node_modules/.bin")];
+  for (const dir of planted) {
+    fs.mkdirSync(dir, { recursive: true });
+    for (const name of ["node", "claude", "node.exe", "claude.cmd"]) fs.writeFileSync(path.join(dir, name), "#!/bin/sh\n", { mode: 0o755 });
+  }
+  const real = binDir("node", "claude", "node.exe", "claude.cmd");
+  const PATH = [...planted, real].join(path.delimiter);
+  assert.equal(stableNodePath({ PATH }, "linux"), path.join(real, "node"));
+  assert.equal(findExecutable("claude", { PATH }, "linux"), path.join(real, "claude"));
+  assert.equal(stableNodePath({ PATH }, "win32"), path.join(real, "node.exe"));
+  assert.equal(findExecutable("claude", { PATH, PATHEXT: ".EXE;.CMD" }, "win32"), path.join(real, "claude.cmd"));
+});
+
 test("stableNodePath returns the first executable node on PATH without resolving symlinks", { skip: process.platform === "win32" && "Windows has no execute permission bit" }, () => {
   const root = tmp();
   const real = path.join(root, "Cellar/node/1.0/bin");
