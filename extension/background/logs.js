@@ -86,7 +86,9 @@ export function installLogListeners(api, store) {
   api.webRequest.onBeforeRequest.addListener((d) => { if (d.tabId >= 0) store.requestStarted(d.tabId, d); }, filter);
   api.webRequest.onCompleted.addListener((d) => { if (d.tabId >= 0) store.requestFinished(d.tabId, d.requestId, String(d.statusCode)); }, filter);
   api.webRequest.onErrorOccurred.addListener((d) => { if (d.tabId >= 0) store.requestFinished(d.tabId, d.requestId, `failed (${d.error})`); }, filter);
-  api.webNavigation.onCommitted.addListener((d) => { if (d.frameId === 0) store.committed(d.tabId, d.url); });
+  // When a navigation switches process, Firefox can report the commit of a new tab's about:blank load after the page the tab
+  // navigated to has committed and logged, so about:blank never resets the console buffer.
+  api.webNavigation.onCommitted.addListener((d) => { if (d.frameId === 0 && d.url !== "about:blank") store.committed(d.tabId, d.url); });
   api.tabs.onRemoved.addListener((tabId) => store.removeTab(tabId));
   api.runtime.onMessage.addListener((msg, sender) => {
     if (msg?.type === "console" && sender.tab) store.addConsole(sender.tab.id, msg.entries);
