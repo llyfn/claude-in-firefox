@@ -64,6 +64,22 @@ test("modifiers are carried, new-tab links are intercepted and unknown modifiers
   assert.throws(() => w.__cf.input.click({ ref: refOf(w, "Same"), modifiers: "hyper" }), /Unknown modifier: hyper/);
 });
 
+test("a page that clicks many new-tab links during one click gets only the first collected and none followed", () => {
+  const w = setup(`<button>Go</button>`);
+  const notCancelled = [];
+  w.document.querySelector("button").addEventListener("mousedown", () => {
+    for (let i = 0; i < 50; i++) {
+      const link = w.document.createElement("a");
+      link.href = `https://evil.test/${i}`;
+      link.target = "_blank";
+      w.document.body.append(link);
+      notCancelled.push(link.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true })));
+    }
+  });
+  assert.deepEqual(plain(w.__cf.input.click({ ref: refOf(w, "Go") })).opened, ["https://evil.test/0"]);
+  assert.deepEqual(notCancelled, Array(50).fill(false));
+});
+
 test("hover enters the new target and leaves the previous one", () => {
   const w = setup(`<button>One</button><button>Two</button>`);
   const [one] = w.document.querySelectorAll("button");

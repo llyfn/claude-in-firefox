@@ -1,7 +1,8 @@
 (() => {
   if (globalThis.__cf?.consoleHook) return;
   const cf = (globalThis.__cf ??= {});
-  const MAX_TEXT = 16_384;
+  // background/logs.js keeps at most this many characters of each message and page URL.
+  const MAX_TEXT = 2_000;
   const MAX_DEPTH = 3;
   const MAX_ITEMS = 100;
   const MAX_QUEUE = 1000;
@@ -10,11 +11,13 @@
   let dropped = 0;
   let timer = null;
 
+  const clip = (text) => (text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}…[truncated]` : text);
+
   const flush = () => {
     timer = null;
     const entries = queue.splice(0);
     if (dropped) {
-      entries.push({ level: "warn", text: `[${dropped} console messages dropped]`, url: location.href, time: Date.now() });
+      entries.push({ level: "warn", text: `[${dropped} console messages dropped]`, url: clip(location.href), time: Date.now() });
       dropped = 0;
     }
     if (entries.length) browser.runtime.sendMessage({ type: "console", entries }).catch(() => {});
@@ -25,7 +28,7 @@
       dropped++;
       return;
     }
-    queue.push({ level, text: text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}…[truncated]` : text, url: location.href, time: Date.now() });
+    queue.push({ level, text: clip(text), url: clip(location.href), time: Date.now() });
     timer ??= setTimeout(flush, 250);
   };
 

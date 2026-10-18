@@ -6,8 +6,6 @@ import { fileURLToPath } from "node:url";
 
 export const HOST_NAME = "claude_firefox_bridge";
 export const EXTENSION_ID = "claude-firefox-bridge@local";
-// Fixed under /tmp rather than $TMPDIR: Firefox and Claude Code start the two ends with different environments.
-export const SOCKET_PATH = `/tmp/claude-firefox-bridge-${os.userInfo().uid}/bridge.sock`;
 
 export const PACKAGE_NAME = "@llyfn/claude-in-firefox";
 export const PACKAGE_VERSION = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
@@ -32,6 +30,14 @@ export function nativeManifestPath(homeDir = os.homedir(), platform = process.pl
 
 export const packageDirFor = (appDir) => path.join(appDir, "node_modules", "@llyfn", "claude-in-firefox");
 
+// Firefox and Claude Code start the two ends with different environments, so the path must not depend on the
+// environment: the home folder comes from the password database, not HOME. macOS limits a socket path to 103 bytes
+// (Linux to 107), so a longer one falls back to a fixed per-user folder under /tmp.
+export function socketPathFor(platform = process.platform, { homedir, uid } = os.userInfo()) {
+  const inAppDir = path.join(appDirFor(homedir, platform), "run", "bridge.sock");
+  return Buffer.byteLength(inAppDir) <= 103 ? inAppDir : `/tmp/claude-firefox-bridge-${uid}/bridge.sock`;
+}
+
 function readAppFile(appDir, name, pattern, what) {
   const file = path.join(appDir, name);
   let value = "";
@@ -44,7 +50,7 @@ function readAppFile(appDir, name, pattern, what) {
 
 // Every local user can list pipe names, so the name in pipe-name is not a secret: the key from bridgeKey is what authenticates the pipe's server.
 export function bridgeAddress({ platform = process.platform, appDir = appDirFor(os.homedir(), platform) } = {}) {
-  return platform === "win32" ? readAppFile(appDir, PIPE_NAME_FILE, PIPE_NAME, "bridge pipe name") : SOCKET_PATH;
+  return platform === "win32" ? readAppFile(appDir, PIPE_NAME_FILE, PIPE_NAME, "bridge pipe name") : socketPathFor(platform);
 }
 
 export function bridgeKey({ platform = process.platform, appDir = appDirFor(os.homedir(), platform) } = {}) {

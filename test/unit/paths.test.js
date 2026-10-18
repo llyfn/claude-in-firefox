@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PACKAGE_VERSION, REGISTRY_KEY, SOCKET_PATH, appDirFor, bridgeAddress, bridgeKey, nativeManifestPath, packageDirFor, verifySocketDir } from "../../host/src/paths.js";
+import { PACKAGE_VERSION, REGISTRY_KEY, appDirFor, bridgeAddress, bridgeKey, nativeManifestPath, packageDirFor, socketPathFor, verifySocketDir } from "../../host/src/paths.js";
 
 const tempRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), "cfb-paths-"));
 
@@ -46,9 +46,28 @@ test("app directories, manifest paths and the package copy are per platform", ()
   assert.match(PACKAGE_VERSION, /^\d+\.\d+\.\d+$/);
 });
 
-test("on macOS and Linux the bridge is the per-user Unix socket", () => {
-  assert.equal(bridgeAddress({ platform: "linux", appDir: "/nowhere" }), SOCKET_PATH);
-  assert.equal(bridgeAddress({ platform: "darwin", appDir: "/nowhere" }), SOCKET_PATH);
+test("on macOS and Linux the bridge socket is in the run folder of the app directory", () => {
+  assert.equal(socketPathFor("darwin", { homedir: "/Users/u", uid: 501 }), path.join("/Users/u", "Library/Application Support/claude-in-firefox/run/bridge.sock"));
+  assert.equal(socketPathFor("linux", { homedir: "/home/u", uid: 1000 }), path.join("/home/u", ".local/share/claude-in-firefox/run/bridge.sock"));
+});
+
+test("a socket path longer than 103 bytes falls back to a per-user folder under /tmp", () => {
+  const suffix = "/.local/share/claude-in-firefox/run/bridge.sock";
+  const homeOf = (length, fill = "h") => `/${fill.repeat(length - 1)}`;
+  const fits = homeOf(103 - suffix.length);
+  assert.equal(socketPathFor("linux", { homedir: fits, uid: 1000 }), path.join(fits, suffix));
+  assert.equal(socketPathFor("linux", { homedir: homeOf(104 - suffix.length), uid: 1000 }), "/tmp/claude-firefox-bridge-1000/bridge.sock");
+  assert.equal(socketPathFor("linux", { homedir: `${fits.slice(0, -1)}\u00e9`, uid: 1000 }), "/tmp/claude-firefox-bridge-1000/bridge.sock");
+  assert.equal(socketPathFor("darwin", { homedir: `/Users/${"u".repeat(200)}`, uid: 501 }), "/tmp/claude-firefox-bridge-501/bridge.sock");
+});
+
+test("on macOS and Linux the bridge is the socket in the current user's home from the password database, whatever HOME says", (t) => {
+  const { homedir } = os.userInfo();
+  const home = process.env.HOME;
+  process.env.HOME = path.join(tempRoot(), "elsewhere");
+  t.after(() => { process.env.HOME = home; });
+  assert.equal(bridgeAddress({ platform: "linux", appDir: "/nowhere" }), path.join(homedir, ".local/share/claude-in-firefox/run/bridge.sock"));
+  assert.equal(bridgeAddress({ platform: "darwin", appDir: "/nowhere" }), path.join(homedir, "Library/Application Support/claude-in-firefox/run/bridge.sock"));
 });
 
 test("on Windows the bridge is the pipe named in the app directory, and a missing or malformed name says to install", () => {

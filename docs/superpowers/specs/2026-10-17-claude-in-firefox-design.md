@@ -95,7 +95,7 @@ claude-in-firefox/
 
 **`native-host.js`** — started by Firefox via the native-messaging manifest (`argv`: manifest path, extension id).
 
-- Socket: `/tmp/claude-firefox-bridge-<uid>/bridge.sock`. A fixed `/tmp` path (not `$TMPDIR`) because the Firefox-spawned and Claude-Code-spawned processes must agree and Claude Code may override `TMPDIR`. Directory created with mode 0700 and verified to be owned by the current uid and not a symlink; socket chmod 0600.
+- Socket: `<appDir>/run/bridge.sock`, with the app directory derived from the home folder in the password database (`os.userInfo().homedir`), never from `HOME` or `TMPDIR`, because the Firefox-spawned and Claude-Code-spawned processes must agree and are started with different environments. A socket path longer than 103 bytes (the macOS limit; Linux allows 107) falls back to `/tmp/claude-firefox-bridge-<uid>/bridge.sock`. The socket's directory is created with mode 0700 and verified to be owned by the current uid and not a symlink; socket chmod 0600.
 - On start, if the socket path exists: try to connect. If the connection is refused, unlink it and listen. If it connects, another host owns it → log to stderr and exit 1 (the extension will retry).
 - Assigns each connected MCP client a numeric `clientId`. Rewrites request ids to `"<clientId>:<id>"` before forwarding to Firefox and routes results back by that prefix.
 - Sends `{type:"session_closed", sessionId}` to Firefox when a client disconnects.
@@ -275,9 +275,9 @@ Removed before distribution: running code strings received at runtime conflicts 
 
 ### 6.8 Console and network logs (`content/console-hook.js`, `background/logs.js`)
 
-- **Console** (MV2 isolated content script, `document_start`, all frames, `match_about_blank`): for `log, info, warn, error, debug`, replace `window.wrappedJSObject.console[level]` with an `exportFunction`-ed wrapper that records `{level, text, url, line?}` then calls the original. Also listens for window `error` and `unhandledrejection`. Argument stringification: strings verbatim; Error → `name: message`; others `JSON.stringify` with fallback `String()`; message capped at 16 384 chars. Batched to the background every 250 ms.
+- **Console** (MV2 isolated content script, `document_start`, all frames, `match_about_blank`): for `log, info, warn, error, debug`, replace `window.wrappedJSObject.console[level]` with an `exportFunction`-ed wrapper that records `{level, text, url, line?}` then calls the original. Also listens for window `error` and `unhandledrejection`. Argument stringification: strings verbatim; Error → `name: message`; others `JSON.stringify` with fallback `String()`; message capped at 2 000 chars. Batched to the background every 250 ms.
 - **Network**: `webRequest.onBeforeRequest` / `onCompleted` / `onErrorOccurred` for `<all_urls>`, `tabId ≥ 0` → `{requestId, method, url, type, status|error}`.
-- Buffers: per tab, 10 000 console / 1 000 network entries (oldest dropped); reset on `webNavigation.onCommitted` (frameId 0) when the origin changes; deleted on tab close. Capture runs for all tabs from the moment the extension loads.
+- Buffers: per tab, 10 000 console / 1 000 network entries (oldest dropped), with each console message, its page URL and each request URL cut to 2 000 chars plus a `…[truncated]` marker; reset on `webNavigation.onCommitted` (frameId 0) when the origin changes; deleted on tab close. Capture runs for all tabs from the moment the extension loads.
 - Output formats match CiC: `[n] [HH:MM:SS] [LEVEL] (url:line) text` and `n. url: …\n   method: …\n   statusCode: …|pending|failed (<error>)`.
 
 ### 6.9 Indicator (`content/indicator.js`, top frame only)
