@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - if: matrix.os == 'ubuntu-latest'
+        run: npm run lint
+
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Firefox Developer Edition (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/firefox.tar.xz" "https://download.mozilla.org/?product=firefox-devedition-latest-ssl&os=linux64&lang=en-US"
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP"
+          echo "FIREFOX_BIN=$RUNNER_TEMP/firefox/firefox" >> "$GITHUB_ENV"
+      - name: Install Firefox Developer Edition (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://download.mozilla.org/?product=firefox-devedition-latest-ssl&os=win64&lang=en-US" -OutFile "$env:RUNNER_TEMP\firefox.exe"
+          Start-Process -FilePath "$env:RUNNER_TEMP\firefox.exe" -ArgumentList "/S" -Wait
+          "FIREFOX_BIN=C:\Program Files\Firefox Developer Edition\firefox.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - run: npm run install-host -- --no-claude
+      # Firefox opens windows maximized on screens smaller than 1280x1040, and with no window manager resize_window cannot restore them.
+      - name: End-to-end tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run e2e
+      - name: End-to-end tests (Windows)
+        if: runner.os == 'Windows'
+        run: npm run e2e

@@ -2,10 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { encode, onMessages } from "../../host/src/framing.js";
 import { BridgeClient, NOT_CONNECTED_MESSAGE, callTool } from "../../host/src/mcp-server.js";
+import { startNativeHost } from "../../host/src/native-host.js";
 import { TOOLS } from "../../host/src/tools.js";
+import { tempAddress } from "./helpers/address.js";
 
 const ok = (text) => ({ content: [{ type: "text", text }], isError: false });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -62,7 +66,7 @@ test("browser_batch rejects nesting and bad action lists", async () => {
 });
 
 test("file_upload reads files into base64 with names and mime types", async () => {
-  const dir = fs.mkdtempSync("/tmp/cfb-upload-");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cfb-upload-"));
   fs.writeFileSync(path.join(dir, "note.txt"), "hello");
   const bridge = fakeBridge(() => ok("uploaded"));
   await callTool(bridge, "file_upload", { tabId: 1, ref: "ref_1", paths: [path.join(dir, "note.txt")] });
@@ -70,7 +74,7 @@ test("file_upload reads files into base64 with names and mime types", async () =
 });
 
 test("file_upload rejects directories and totals over 10 MB", async () => {
-  const dir = fs.mkdtempSync("/tmp/cfb-upload-");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cfb-upload-"));
   const big = path.join(dir, "big.bin");
   fs.writeFileSync(big, "");
   fs.truncateSync(big, 10 * 1024 * 1024 + 1);
@@ -80,14 +84,16 @@ test("file_upload rejects directories and totals over 10 MB", async () => {
   assert.equal(bridge.calls.length, 0);
 });
 
-async function fakeHost(socketPath, onCall) {
+async function fakeHost(socketPath, onCall, onHello = () => {}) {
   const received = [];
   const sockets = new Set();
   const server = net.createServer((socket) => {
     sockets.add(socket);
     onMessages(socket, (msg) => {
       received.push(msg);
-      if (msg.type === "call") onCall(msg, (reply) => socket.write(encode(reply)));
+      const reply = (r) => socket.write(encode(r));
+      if (msg.type === "call") onCall(msg, reply);
+      if (msg.type === "hello") onHello(msg, reply, socket);
     });
   });
   await new Promise((resolve) => server.listen(socketPath, resolve));
@@ -95,17 +101,16 @@ async function fakeHost(socketPath, onCall) {
 }
 
 test("BridgeClient reports not connected when no host is listening", async () => {
-  const dir = fs.mkdtempSync("/tmp/cfb-mcp-");
-  const client = new BridgeClient({ socketPath: path.join(dir, "bridge.sock"), sessionId: "s" });
+  const client = new BridgeClient({ address: tempAddress(), sessionId: "s" });
   await assert.rejects(client.call("tabs_create", {}, 1000), { message: NOT_CONNECTED_MESSAGE });
-  const missing = new BridgeClient({ socketPath: "/tmp/cfb-does-not-exist/bridge.sock", sessionId: "s" });
+  const missing = new BridgeClient({ address: "/tmp/cfb-does-not-exist/bridge.sock", sessionId: "s" });
   await assert.rejects(missing.call("tabs_create", {}, 1000), { message: NOT_CONNECTED_MESSAGE });
 });
 
 test("BridgeClient sends hello once and resolves results by id", async (t) => {
-  const socketPath = path.join(fs.mkdtempSync("/tmp/cfb-mcp-"), "bridge.sock");
+  const socketPath = tempAddress();
   const host = await fakeHost(socketPath, (msg, reply) => reply({ type: "result", id: msg.id, content: [{ type: "text", text: `${msg.tool} ok` }], isError: false }));
-  const client = new BridgeClient({ socketPath, sessionId: "s1" });
+  const client = new BridgeClient({ address: socketPath, sessionId: "s1" });
   t.after(async () => { client.close(); await host.close(); });
   const [a, b] = await Promise.all([client.call("tabs_create", {}, 1000), client.call("tabs_context", {}, 1000)]);
   assert.equal(a.content[0].text, "tabs_create ok");
@@ -115,17 +120,17 @@ test("BridgeClient sends hello once and resolves results by id", async (t) => {
 });
 
 test("BridgeClient times out slow calls", async (t) => {
-  const socketPath = path.join(fs.mkdtempSync("/tmp/cfb-mcp-"), "bridge.sock");
+  const socketPath = tempAddress();
   const host = await fakeHost(socketPath, () => {});
-  const client = new BridgeClient({ socketPath, sessionId: "s" });
+  const client = new BridgeClient({ address: socketPath, sessionId: "s" });
   t.after(async () => { client.close(); await host.close(); });
   await assert.rejects(client.call("navigate", {}, 50), /navigate timed out/);
 });
 
 test("BridgeClient fails pending calls when the host goes away and reconnects on the next call", async (t) => {
-  const socketPath = path.join(fs.mkdtempSync("/tmp/cfb-mcp-"), "bridge.sock");
+  const socketPath = tempAddress();
   const first = await fakeHost(socketPath, () => {});
-  const client = new BridgeClient({ socketPath, sessionId: "s" });
+  const client = new BridgeClient({ address: socketPath, sessionId: "s" });
   const pending = client.call("navigate", {}, 5000);
   await sleep(50);
   await first.close();
@@ -151,4 +156,66 @@ test("wait calls get their duration plus 10 s and other calls 30 s", async () =>
   await callTool(bridge, "computer", { action: "wait", duration: 2, tabId: 1 });
   await callTool(bridge, "computer", { action: "screenshot", tabId: 1 });
   assert.deepEqual(bridge.calls.map((c) => c.timeoutMs), [40_000, 30_000, 30_000]);
+});
+
+test("with the Windows transport the client skips directory checks", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async (t) => {
+  const dir = fs.mkdtempSync("/tmp/cfb-win-");
+  fs.chmodSync(dir, 0o755);
+  const address = path.join(dir, "bridge.sock");
+  const host = await fakeHost(address, (msg, reply) => reply({ type: "result", id: msg.id, content: [{ type: "text", text: "ok" }], isError: false }));
+  const client = new BridgeClient({ address, sessionId: "s", platform: "win32" });
+  t.after(async () => { client.close(); await host.close(); });
+  assert.deepEqual(await client.call("tabs_create", {}, 1000), { content: [{ type: "text", text: "ok" }], isError: false });
+});
+
+test("an address or key that cannot be resolved reads as not connected", async () => {
+  const client = new BridgeClient({ address: () => { throw new Error("No valid bridge pipe name in X."); }, sessionId: "s" });
+  await assert.rejects(client.call("tabs_create", {}, 1000), { message: `${NOT_CONNECTED_MESSAGE} (No valid bridge pipe name in X.)` });
+  const keyless = new BridgeClient({ address: tempAddress(), key: () => { throw new Error("No valid bridge key in Y."); }, sessionId: "s", platform: "win32" });
+  await assert.rejects(keyless.call("tabs_create", {}, 1000), { message: `${NOT_CONNECTED_MESSAGE} (No valid bridge key in Y.)` });
+});
+
+const KEY = "0f".repeat(32);
+const UNVERIFIED = /^The process serving the bridge pipe could not prove that it holds the key in pipe-key, so another program may be using the pipe name\.$/;
+
+test("on Windows the client completes the key handshake with the native host and its calls work", async (t) => {
+  const address = tempAddress();
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const host = await startNativeHost({ input, output, address, key: KEY, platform: "win32" });
+  onMessages(output, (msg) => {
+    if (msg.type === "call") input.write(encode({ type: "result", id: msg.id, content: [{ type: "text", text: `${msg.tool} ok` }], isError: false }));
+  });
+  const client = new BridgeClient({ address, key: () => KEY, sessionId: "s", platform: "win32" });
+  t.after(() => { client.close(); host.close(); });
+  assert.deepEqual(await client.call("tabs_create", {}, 1000), { content: [{ type: "text", text: "tabs_create ok" }], isError: false });
+  assert.deepEqual(await client.call("tabs_context", {}, 1000), { content: [{ type: "text", text: "tabs_context ok" }], isError: false });
+});
+
+test("on Windows a pipe server that cannot prove it holds the key is refused and never sent a call", async (t) => {
+  const answers = {
+    "a wrong proof": (msg, reply) => reply({ type: "welcome", proof: "0".repeat(64) }),
+    "no proof": (msg, reply) => reply({ type: "welcome" }),
+    "a closed pipe": (msg, reply, socket) => socket.destroy(),
+  };
+  for (const [answer, onHello] of Object.entries(answers)) {
+    const address = tempAddress();
+    const host = await fakeHost(address, () => {}, onHello);
+    const client = new BridgeClient({ address, key: KEY, sessionId: "s", platform: "win32" });
+    t.after(async () => { client.close(); await host.close(); });
+    await assert.rejects(client.call("tabs_create", {}, 1000), { message: UNVERIFIED }, answer);
+    assert.deepEqual(host.received.map((m) => m.type), ["hello"], answer);
+    assert.match(host.received[0].nonce, /^[0-9a-f]{64}$/, answer);
+  }
+});
+
+test("on Windows a pipe server that never answers hello is refused once the handshake bound passes", async (t) => {
+  const address = tempAddress();
+  const host = await fakeHost(address, () => {});
+  const client = new BridgeClient({ address, key: KEY, sessionId: "s", platform: "win32", handshakeTimeoutMs: 100 });
+  t.after(async () => { client.close(); await host.close(); });
+  const started = Date.now();
+  await assert.rejects(client.call("tabs_create", {}, 3000), { message: UNVERIFIED });
+  assert.ok(Date.now() - started < 1000);
+  assert.deepEqual(host.received.map((m) => m.type), ["hello"]);
 });

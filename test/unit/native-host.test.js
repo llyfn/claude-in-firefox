@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { Decoder, FIREFOX_SPLIT_THRESHOLD, encode } from "../../host/src/framing.js";
 import { startNativeHost } from "../../host/src/native-host.js";
+import { tempAddress } from "./helpers/address.js";
 
-const tempSocketPath = () => path.join(fs.mkdtempSync("/tmp/cfb-test-"), "sock", "bridge.sock");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function messageQueue(stream) {
@@ -24,13 +25,20 @@ function messageQueue(stream) {
   return { next: () => (queue.length ? Promise.resolve(queue.shift()) : new Promise((resolve) => waiters.push(resolve))) };
 }
 
-async function startHost() {
+async function startHost(options = {}) {
   const input = new PassThrough();
   const output = new PassThrough();
-  const socketPath = tempSocketPath();
-  const host = await startNativeHost({ input, output, socketPath });
+  const socketPath = tempAddress("sock");
+  const host = await startNativeHost({ input, output, address: socketPath, ...options });
   return { input, socketPath, host, fromHost: messageQueue(output) };
 }
+
+const connectError = (address) =>
+  new Promise((resolve) => {
+    const probe = net.connect(address);
+    probe.once("connect", () => { probe.destroy(); resolve(null); });
+    probe.once("error", (err) => resolve(err.code));
+  });
 
 async function connectClient(socketPath) {
   const socket = net.connect(socketPath);
@@ -58,6 +66,30 @@ test("calls use the session announced in hello and are ignored before it", async
   client.send({ type: "hello", sessionId: "real" });
   client.send({ type: "call", id: 2, sessionId: "forged", tool: "t", args: {} });
   assert.deepEqual(await h.fromHost.next(), { type: "call", id: "1:2", sessionId: "real", tool: "t", args: {} });
+  client.socket.destroy();
+});
+
+test("with a key the host answers the nonce in hello with an HMAC of it and keeps the session", async (t) => {
+  const key = "0f".repeat(32);
+  const h = await startHost({ key });
+  t.after(() => h.host.close());
+  const client = await connectClient(h.socketPath);
+  client.send({ type: "hello", sessionId: "s1", nonce: "n1" });
+  assert.deepEqual(await client.messages.next(), { type: "welcome", proof: createHmac("sha256", Buffer.from(key, "hex")).update("n1").digest("hex") });
+  client.send({ type: "call", id: 1, sessionId: "s1", tool: "t", args: {} });
+  assert.deepEqual(await h.fromHost.next(), { type: "call", id: "1:1", sessionId: "s1", tool: "t", args: {} });
+  client.socket.destroy();
+});
+
+test("with a key the host does not answer a hello without a string nonce", async (t) => {
+  const h = await startHost({ key: "0f".repeat(32) });
+  t.after(() => h.host.close());
+  const client = await connectClient(h.socketPath);
+  client.send({ type: "hello", sessionId: "s1", nonce: 5 });
+  client.send({ type: "call", id: 1, sessionId: "s1", tool: "t", args: {} });
+  assert.equal((await h.fromHost.next()).id, "1:1");
+  h.input.write(encode({ type: "result", id: "1:1", content: [], isError: false }));
+  assert.equal((await client.messages.next()).type, "result");
   client.socket.destroy();
 });
 
@@ -107,11 +139,11 @@ test("calls larger than the Firefox limit arrive as parts", async (t) => {
   client.socket.destroy();
 });
 
-test("the socket is private and a stale socket file is replaced", async (t) => {
-  const socketPath = tempSocketPath();
+test("the socket is private and a stale socket file is replaced", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async (t) => {
+  const socketPath = tempAddress("sock");
   fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(socketPath, "");
-  const host = await startNativeHost({ input: new PassThrough(), output: new PassThrough(), socketPath });
+  const host = await startNativeHost({ input: new PassThrough(), output: new PassThrough(), address: socketPath });
   t.after(() => host.close());
   assert.equal(fs.statSync(socketPath).mode & 0o777, 0o600);
   assert.equal(fs.statSync(path.dirname(socketPath)).mode & 0o777, 0o700);
@@ -120,12 +152,25 @@ test("the socket is private and a stale socket file is replaced", async (t) => {
 test("a second host refuses to start while the first is serving", async (t) => {
   const h = await startHost();
   t.after(() => h.host.close());
-  await assert.rejects(startNativeHost({ input: new PassThrough(), output: new PassThrough(), socketPath: h.socketPath }), /already serving/);
+  await assert.rejects(startNativeHost({ input: new PassThrough(), output: new PassThrough(), address: h.socketPath }), /already serving/);
 });
 
-test("Firefox closing stdin removes the socket", async () => {
+test("Firefox closing stdin stops the host accepting connections and removes the Unix socket file", async () => {
   const h = await startHost();
+  assert.equal(await connectError(h.socketPath), null);
   h.input.end();
-  await sleep(20);
-  assert.equal(fs.existsSync(h.socketPath), false);
+  const deadline = Date.now() + 2000;
+  let code;
+  while (!["ENOENT", "ECONNREFUSED"].includes((code = await connectError(h.socketPath))) && Date.now() < deadline) await sleep(10);
+  assert.match(String(code), /^(ENOENT|ECONNREFUSED)$/);
+  if (process.platform !== "win32") assert.equal(fs.existsSync(h.socketPath), false);
+});
+
+test("with the Windows transport the host skips directory checks and reports a busy address", { skip: process.platform === "win32" && "Unix sockets and file modes" }, async (t) => {
+  const dir = fs.mkdtempSync("/tmp/cfb-win-");
+  fs.chmodSync(dir, 0o755);
+  const address = path.join(dir, "bridge.sock");
+  const first = await startNativeHost({ input: new PassThrough(), output: new PassThrough(), address, platform: "win32" });
+  t.after(() => first.close());
+  await assert.rejects(startNativeHost({ input: new PassThrough(), output: new PassThrough(), address, platform: "win32" }), { message: `Another native host is already serving ${address}` });
 });

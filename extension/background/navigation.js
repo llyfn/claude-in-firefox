@@ -12,15 +12,40 @@ export async function tabShowing(api, tabId, url) {
   return tab;
 }
 
-// Out-of-process iframes register their frame ids after the top-level load event.
+// Evaluates to [frames, navigating]: the page's frames, and those expected to leave the initial about:blank. Frames without a src stay blank, and lazy ones load only when scrolled into view.
+const COUNT_FRAMES = `(() => {
+  const frames = [...document.querySelectorAll("iframe, frame")];
+  const navigating = frames.filter((f) => f.getAttribute("loading")?.toLowerCase() !== "lazy" && (f.hasAttribute("srcdoc") || !/^\\s*(about:blank)?\\s*$/i.test(f.getAttribute("src") ?? "")));
+  return [frames.length, navigating.length];
+})()`;
+
+// The content router answers every op, unknown ones with an error, once the frame's content scripts run.
+function answers(api, tabId, frameId, timeoutMs) {
+  let timer;
+  return Promise.race([
+    api.tabs.sendMessage(tabId, { op: "ping" }, { frameId }).then(() => true, () => false),
+    new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs, false); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+// Out-of-process iframes register their frame ids after the top-level load event, can still show the initial about:blank then,
+// and once loaded, can take a moment before their content scripts listen. Until then nothing can be injected into them.
 export async function framesSettled(api, tabId) {
-  const counted = await api.tabs.executeScript(tabId, { frameId: 0, code: 'document.querySelectorAll("iframe, frame").length' }).catch(() => null);
-  const expected = counted?.[0];
+  const counted = await api.tabs.executeScript(tabId, { frameId: 0, code: COUNT_FRAMES }).catch(() => null);
+  const [expected, navigating] = counted?.[0] ?? [];
   if (!(expected > 0)) return;
-  for (let waited = 0; waited < 1000; waited += 50) {
+  for (const end = Date.now() + 1000; Date.now() < end;) {
     const frames = await api.webNavigation.getAllFrames({ tabId }).catch(() => null);
-    if (!frames || frames.filter((f) => f.parentFrameId === 0).length >= expected) return;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const children = frames?.filter((f) => f.parentFrameId === 0);
+    if (!children) return;
+    if (children.length >= expected) {
+      const loaded = children.filter((f) => f.url !== "about:blank");
+      const timeoutMs = Math.min(250, end - Date.now());
+      const ready = await Promise.all(loaded.map((f) => answers(api, tabId, f.frameId, timeoutMs)));
+      if (ready.filter(Boolean).length >= navigating) return;
+    }
+    const left = end - Date.now();
+    if (left > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(50, left)));
   }
 }
 

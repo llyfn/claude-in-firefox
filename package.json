@@ -1,10 +1,25 @@
 {
-  "name": "claude-in-firefox",
-  "version": "0.2.0",
-  "private": true,
-  "description": "Drive Firefox from Claude Code through MCP tools modeled on Claude in Chrome",
+  "name": "@llyfn/claude-in-firefox",
+  "version": "0.3.0",
+  "description": "Drive Firefox from Claude Code and other MCP clients",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/llyfn/claude-in-firefox.git"
+  },
+  "homepage": "https://github.com/llyfn/claude-in-firefox#readme",
+  "bin": {
+    "claude-firefox": "host/src/cli.js"
+  },
+  "files": [
+    "host/src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -12,7 +27,7 @@
     "test": "node --test test/unit/*.test.js",
     "lint": "web-ext lint --source-dir extension",
     "build": "web-ext build --source-dir extension --overwrite-dest",
-    "install-host": "node host/src/install.js",
+    "install-host": "node host/src/cli.js install",
     "e2e": "node --test --test-concurrency=1 test/e2e/*.test.js"
   },
   "dependencies": {

@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 export const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 export const FIREFOX_SPLIT_THRESHOLD = 900_000;
 // Firefox rejects host→browser messages over 1 MiB. Re-serialized inside a part message,
@@ -53,3 +55,5 @@ export function splitForFirefox(msg, msgId) {
   }
   return parts;
 }
+
+export const bridgeProof = (key, nonce) => createHmac("sha256", Buffer.from(key, "hex")).update(nonce).digest("hex");
