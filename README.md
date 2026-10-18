@@ -1,128 +1,136 @@
 # Claude Code Bridge for Firefox
 
-> An independent project. Not affiliated with, endorsed by, or sponsored by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.
+Let Claude Code drive your everyday Firefox: open tabs, click, type, read pages, fill forms, take screenshots, and read console and network logs.
 
-Drive your everyday Firefox from Claude Code. A Firefox extension plus a local MCP bridge gives Claude browser tools modeled on Claude in Chrome: navigate, click, type, take screenshots, read the page, fill forms, and read console and network logs. It works in your real profile, with your logins, and it refuses no domain.
+It works in your real profile, with your logins. Read [Safety](#safety) before you use it on sites that matter.
+
+> An independent project, not affiliated with or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.
+
+## Quick start
+
+You need Firefox 140 or newer and Node 20 or newer, on macOS, Linux or Windows. On Linux, the Snap and Flatpak builds of Firefox are not supported.
+
+1. **Add-on.** Download the `.xpi` from the [latest release](https://github.com/llyfn/claude-in-firefox/releases/latest) and open it in Firefox.
+2. **Bridge.** Run:
+   ```bash
+   npx @llyfn/claude-in-firefox install
+   ```
+   This registers the bridge with Firefox and adds a `firefox` MCP server to Claude Code. Add `--no-claude` to skip the Claude Code step.
+3. **Use it.** Start a new Claude Code session and ask it to use Firefox.
 
 ## How it works
 
 ```
-MCP client ──starts──▶ claude-firefox mcp ──unix socket──▶ native-host.js ──native messaging──▶ extension
-               (host/src/cli.js mcp)       (named pipe on Windows)
+Claude Code ──▶ claude-firefox mcp ──socket or pipe──▶ native host ──native messaging──▶ add-on
 ```
 
-Each Claude Code session gets its own Firefox window, opened behind the Firefox window you are using, and can only touch tabs in that window (plus popups opened from it). The window title and, when tab groups are enabled, a tab group show the session's status: ⌛ working, ✅ idle, ⏸ stopped. A violet glow and a phantom cursor show which tab Claude is working in.
-
-Both halves run from one copy of the package that the installer puts in an app directory (`~/Library/Application Support/claude-in-firefox` on macOS, `~/.local/share/claude-in-firefox` on Linux, `%LOCALAPPDATA%\claude-in-firefox` on Windows). The app directory is outside `~/Desktop`, `~/Documents` and `~/Downloads` because macOS privacy protection blocks processes that Firefox launches from reading those folders. Firefox starts the native host from there through native messaging, and MCP clients start the MCP server from there. On Windows the two meet on a named pipe whose random name is kept in `pipe-name` in that directory. Any program can create a pipe under that name, so before sending anything the MCP server checks that the pipe's server holds the random key kept in `pipe-key`, which only you can read. Also on Windows, Firefox finds the native host through the registry key `HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge`.
-
-## Requirements
-
-- macOS, Linux or Windows, with Node ≥ 20 on PATH.
-- Firefox 140 or newer. The signed add-on works in regular Firefox; unsigned development builds need Firefox Developer Edition or Nightly.
-- On Linux, use a Firefox installed from Mozilla or your distribution's package; the Snap and Flatpak builds keep native-messaging hosts elsewhere and are not supported.
-- Node ≥ 22.22 for development and tests (jsdom 30 requires it).
-
-## Install
-
-1. Download the `.xpi` from the [latest release](https://github.com/llyfn/claude-in-firefox/releases/latest) and open it in Firefox to install the signed add-on.
-2. Run `npx @llyfn/claude-in-firefox install`. It installs the bridge, registers the native host with Firefox (a registry key on Windows), and registers the `firefox` MCP server with Claude Code when the `claude` command is available. Pass `--no-claude` to skip that.
-3. Start a new Claude Code session and ask it to use the `firefox` tools. It should begin with `tabs_context` and `createIfEmpty: true`.
-
-## Update
-
-Run `npx @llyfn/claude-in-firefox@latest install`, and install the `.xpi` from the newer release (the add-on does not update itself). The installer replaces an existing `firefox` entry, including a 0.2 entry that points into a clone, only when it registers with Claude Code itself; with `--no-claude`, or without `claude` on PATH, run `claude mcp remove --scope user firefox` before the `claude mcp add` command it prints.
-
-## Uninstall
-
-`npx @llyfn/claude-in-firefox uninstall` removes the Claude Code entry, the native-messaging registration and the app directory. Pass `--no-claude` to leave the Claude Code entry alone. Remove the add-on in `about:addons`.
-
-## Other MCP clients
-
-The installer prints a JSON block; add it to the client's MCP configuration. For Claude Desktop that file is `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS and `%APPDATA%\Claude\claude_desktop_config.json` on Windows.
-
-```json
-{ "mcpServers": { "firefox": { "command": "<path to node>", "args": ["<app directory>/node_modules/@llyfn/claude-in-firefox/host/src/cli.js", "mcp"] } } }
-```
-
-Each client process is its own session with its own window.
+- Each Claude Code session gets its own Firefox window, opened behind yours. It can only touch tabs in that window, plus popups opened from them.
+- The window title, and the tab group when tab groups are on, show the session's status: ⌛ working, ✅ idle, ⏸ stopped.
+- A violet glow and a cursor show which tab Claude is working in.
+- On Windows the two halves of the bridge talk over a named pipe. Before using the pipe, the MCP server checks that the process at the other end holds a key that only your user account can read.
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
-| `tabs_context`, `tabs_create`, `tabs_close` | List, open and close tabs in this session's window |
-| `navigate` | Load a URL (or go back/forward) and wait up to 15 s for it to finish |
-| `computer` | Clicks, typing, keys, scroll, hover, drag, screenshots, zoom, wait (up to 30 s); clicks, typing and keys wait for any navigation they start |
-| `read_page`, `find` | Accessibility-tree outline with stable `ref_N` ids; keyword search over it |
-| `form_input`, `file_upload` | Set form controls by ref; put local files into file inputs |
-| `get_page_text` | Readable text of the main content |
+| `tabs_context`, `tabs_create`, `tabs_close` | List, open and close the session's tabs |
+| `navigate` | Load a URL, or go back or forward, waiting up to 15 s for the page to load |
+| `computer` | Click, type, press keys, scroll, hover, drag, take screenshots, zoom, wait |
+| `read_page`, `find` | Accessibility-tree outline with `ref_N` ids, and keyword search over it |
+| `form_input`, `file_upload` | Set form fields by ref, and attach local files to file inputs |
+| `get_page_text` | Readable text of the page's main content |
 | `read_console_messages`, `read_network_requests` | Console output and HTTP requests since the page's origin loaded |
-| `resize_window` | Resize the browser window |
-| `browser_batch` | Run several of the above in one round trip |
+| `resize_window` | Resize the session window |
+| `browser_batch` | Run several of these tools in one call |
 
 ## Safety
 
-- **Stop button.** Every page in a session window shows a "Claude is using this window · Stop" bar. Stop cancels the running call and makes every later call fail until you press Resume. Only a real click works; Claude's synthetic input cannot press it. Pages the add-on cannot reach (`about:` pages including the blank tab of a new session window, other extensions' pages, restricted domains, PDFs) show no bar; there, closing the session's window ends the session, and Claude has to open a new window to continue.
-- **Dialogs are answered automatically in session tabs.** alert() is dismissed, confirm() answers OK, prompt() returns its default text, and "Leave page?" prompts are suppressed; Claude sees each dialog and the answer. While a session is stopped, dialogs appear normally.
-- **No domain blocking.** Unlike Claude in Chrome, this extension blocks no sites and shows no per-site permission prompts. Claude Code's own permission settings are the only gate.
-- **Firefox's own restrictions still apply.** Firefox keeps every extension off its privileged pages (`about:*`, other extensions' pages) and off the domains listed in the `extensions.webextensions.restrictedDomains` pref, such as addons.mozilla.org. To allow those domains, clear that pref and set `privacy.resistFingerprinting.block_mozAddonManager` to `true` in `about:config`. The installer never changes Firefox prefs.
-- **Two guards are kept:**
-  - Password, one-time-code and payment-card field values show as `(sensitive value hidden)` in `read_page` and as `(hidden)` in `form_input` output. Nothing else is redacted: screenshots and zoom, and console and network logs can all show sensitive values.
-  - Input is aborted if the tab switched to another domain mid-action.
-- **Prompt injection is a real risk.** Web pages can contain text written to steer Claude. Claude acts with your logged-in sessions, so review what you ask it to do on sensitive sites, especially if you run Claude Code without permission prompts.
+- **It acts as you.** Claude uses your logged-in sessions. The add-on blocks no sites and asks no per-site permission; Claude Code's own permission settings are the only gate.
+- **Prompt injection is a real risk.** A page can contain text written to steer Claude. Be careful on sensitive sites, especially if you run Claude Code without permission prompts.
+- **Stop button.** Every page in a session window shows a "Claude is using this window · Stop" bar. Stop cancels the running call and blocks all later calls until you press Resume. Only a real click works; Claude's synthetic input can't press it.
+  - Some pages can't show the bar: `about:` pages (including a new window's blank tab), other add-ons' pages, PDFs and restricted sites. On those, close the window to end the session.
+- **Dialogs are answered automatically** in session tabs, and Claude sees each answer: `alert()` is dismissed, `confirm()` gets OK, `prompt()` gets its default text, and "Leave page?" prompts are skipped. While a session is stopped, dialogs appear normally.
+- **What's redacted.** Password, one-time-code and payment-card fields show as hidden in `read_page` and `form_input`. Nothing else is redacted: screenshots and console and network logs can show sensitive data.
+- **Domain guard.** Input stops if the tab moves to another domain in the middle of an action.
+- **Firefox's own limits still apply.** No add-on can touch `about:` pages, other add-ons' pages, or the domains in the `extensions.webextensions.restrictedDomains` pref, such as addons.mozilla.org. To allow those domains, clear that pref and set `privacy.resistFingerprinting.block_mozAddonManager` to `true` in `about:config`. The installer never changes Firefox prefs.
 
 ## Limitations
 
-- Firefox gives extensions no OS-level input, so clicks and keys are synthesized inside the page (`isTrusted: false`). As a result:
-  - CSS `:hover` does not apply.
-  - Native `<select>` popups and file pickers cannot be operated (use `form_input` / `file_upload`).
-  - Clipboard paste is unavailable.
-  - Pages that ignore script-generated events will not react.
-- Only one Firefox profile can run the extension at a time; a second profile's native host exits.
-- Disabling, reloading or updating the add-on can break `console` and page dialogs in tabs that were already open; reload those tabs.
-- A dialog raised by a page's very first scripts, before the add-on has marked the tab as a session tab, appears normally and stalls that call until it times out.
-- Firefox opens every new window in front. When you are using Firefox, the add-on gives focus back to your window; when another app is in front, opening a session's window brings Firefox to the front.
-- Windows support is tested in CI with Firefox Developer Edition; report problems with other setups.
-- Updating to 0.2.0 asks for the new "sessions" permission, which stores each session's id on its window so sessions survive add-on reloads, and Firefox restarts that reopen your previous windows.
+- **Synthetic input.** Firefox gives add-ons no OS-level input, so clicks and keys are simulated inside the page (`isTrusted: false`). Because of that:
+  - CSS `:hover` doesn't apply.
+  - Native `<select>` menus and file pickers can't be used; use `form_input` and `file_upload` instead.
+  - Clipboard paste doesn't work.
+  - Some pages ignore simulated events.
+- **One Firefox profile at a time** can run the add-on.
+- **Reload open tabs after you disable, reload or update the add-on.** Otherwise console capture and dialog handling can break in tabs that were already open.
+- **Very early dialogs.** A dialog raised by a page's first scripts can show normally and stall the call until it times out.
+- **Focus.** Opening a session window brings Firefox to the front if another app is active.
+- **Windows** is tested in CI with Firefox Developer Edition only.
 
-## Development
+## Update and uninstall
 
-```bash
-npm install
-npm test          # unit tests (node:test + jsdom)
-npm run lint      # web-ext lint
-npm run e2e       # drives a real Firefox Developer Edition
-npm run install-host  # packs this clone and installs it like a release (add -- --no-claude to leave Claude Code alone)
-npm run build     # packages the extension into web-ext-artifacts/
+- **Update:** run `npx @llyfn/claude-in-firefox@latest install`, then install the `.xpi` from the new release. The add-on doesn't update itself.
+- **Uninstall:** run `npx @llyfn/claude-in-firefox uninstall`, then remove the add-on in `about:addons`. This removes the Claude Code entry, the Firefox registration and the bridge's files. `--no-claude` keeps the Claude Code entry.
+
+With `--no-claude`, or when `claude` isn't on your PATH, the installer prints the `claude mcp add` command for you to run. If a `firefox` entry already exists, remove it first with `claude mcp remove --scope user firefox`.
+
+## Other MCP clients
+
+The installer also prints a JSON block like this. Add it to your client's MCP configuration; for Claude Desktop, that is `claude_desktop_config.json`.
+
+```json
+{ "mcpServers": { "firefox": { "command": "<path to node>", "args": ["<app directory>/node_modules/@llyfn/claude-in-firefox/host/src/cli.js", "mcp"] } } }
 ```
 
-To run an unsigned build, open `about:config` in Firefox Developer Edition, set `xpinstall.signatures.required` to `false`, run `npm run build`, then open `about:addons` → gear menu → *Install Add-on From File…* and pick `web-ext-artifacts/claude_code_bridge_for_firefox-<version>.zip`. Re-run `npm run install-host` after changes under `host/src`.
-
-Development and tests need Node ≥ 22.22. E2E needs Firefox Developer Edition and a prior `npm run install-host -- --no-claude`. Do not run it while another Firefox instance has the add-on installed: only one native host can own the bridge socket.
-
-E2E uses `FIREFOX_BIN` if set, otherwise the default Developer Edition path on macOS and Windows; on Linux set `FIREFOX_BIN` to your Firefox Developer Edition binary. CI runs unit tests on Linux, macOS and Windows and e2e on Linux and Windows. It also connects to Firefox over WebDriver BiDi on a free local port to press the Stop bar with real clicks.
-
-Design: `docs/superpowers/specs/2026-10-17-claude-in-firefox-design.md`; sessions, Stop and dialogs: `docs/superpowers/specs/2026-10-17-session-control-design.md`.
-
-## Releasing
-
-Releases are signed by addons.mozilla.org as an unlisted add-on (not shown in the add-ons store), published to npm as `@llyfn/claude-in-firefox`, and attached to a GitHub release by `.github/workflows/release.yml`.
-
-One-time setup:
-
-1. Create an addons.mozilla.org account and generate API credentials at <https://addons.mozilla.org/developers/addon/api/key/>.
-2. Store them as repository secrets: `gh secret set AMO_JWT_ISSUER` and `gh secret set AMO_JWT_SECRET`.
-3. Create an npm automation token for the `@llyfn` scope and store it with `gh secret set NPM_TOKEN`.
-
-For each release:
-
-1. Bump `version` in both `extension/manifest.json` and `package.json`. addons.mozilla.org refuses to sign a version it has already signed.
-2. Commit, then push a matching tag: `git tag v0.1.0 && git push origin v0.1.0`.
-3. The workflow checks that the tag matches both versions, runs the unit tests and lint, checks the npm token, signs the add-on, publishes `@llyfn/claude-in-firefox` to npm, and creates the GitHub release with the signed `.xpi`.
+Each client process is its own session, with its own window.
 
 ## Troubleshooting
 
-- **"Firefox extension not connected", or on Windows "could not prove that it holds the key in pipe-key".** Firefox isn't running, the add-on isn't installed, or `npx @llyfn/claude-in-firefox install` wasn't run. On Windows, `pipe-name` and `pipe-key` must exist in the app directory, and for the second message, restart Firefox first: a native host started before install last ran, or one that is shutting down, also gets it. If it persists, another program may be serving the bridge's pipe name. The Browser Console (⌘⇧J, or Ctrl+Shift+J on Windows and Linux) shows native host errors prefixed `claude-firefox native host:`.
-- **Native host or MCP server stops starting after a Node upgrade.** The installer records the first `node` on `PATH`. After changing Node installations, re-run `npx @llyfn/claude-in-firefox install`, which rewrites the wrapper and the Claude Code entry with the current node.
-- **"Cannot access this page".** The page is one Firefox reserves (see Safety).
-- **Clicks land in the wrong place.** Take a fresh `screenshot` first: coordinates always refer to the most recent screenshot of that tab.
+- **"Firefox extension not connected".** Check that Firefox is running, the add-on is installed, and you ran the install command. Native host errors appear in the Browser Console (⌘⇧J on macOS, Ctrl+Shift+J elsewhere), prefixed `claude-firefox native host:`.
+- **On Windows, "could not prove that it holds the key in pipe-key".** Restart Firefox: the bridge may still be running from before your last install. If that doesn't help, run the install command again, which recreates `pipe-name` and `pipe-key` in the app directory if they are missing or damaged. If the error persists, another program may be using the bridge's pipe name.
+- **It stopped working after a Node upgrade.** The installer remembers the first `node` on your PATH. Run the install command again.
+- **"Cannot access this page".** Firefox reserves that page for itself (see [Safety](#safety)).
+- **Clicks land in the wrong place.** Take a new screenshot first. Coordinates always refer to the tab's latest screenshot.
+
+The bridge lives in an app directory: `~/Library/Application Support/claude-in-firefox` on macOS, `~/.local/share/claude-in-firefox` on Linux, and `%LOCALAPPDATA%\claude-in-firefox` on Windows.
+
+## Development
+
+Development needs Node 22.22 or newer.
+
+```bash
+npm install
+npm test                               # unit tests
+npm run lint                           # web-ext lint
+npm run install-host -- --no-claude    # install this clone like a release
+npm run e2e                            # drive a real Firefox Developer Edition
+npm run build                          # package the add-on into web-ext-artifacts/
+```
+
+- **e2e** needs Firefox Developer Edition and a prior `npm run install-host -- --no-claude`. On Linux, set `FIREFOX_BIN` to its path. Don't run e2e while another Firefox has the add-on installed, because only one native host can run at a time.
+- **Unsigned builds** need Developer Edition or Nightly with `xpinstall.signatures.required` set to `false`. Install the `.zip` from `web-ext-artifacts/` through `about:addons` → gear menu → *Install Add-on From File…*.
+- After you change anything under `host/src`, run `npm run install-host` again.
+- **Design notes** are in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+
+<details>
+<summary>Releasing (maintainers)</summary>
+
+`.github/workflows/release.yml` signs the add-on with addons.mozilla.org as an unlisted add-on, publishes `@llyfn/claude-in-firefox` to npm, and attaches the signed `.xpi` to a GitHub release.
+
+One-time setup: store three secrets in the repository's `release` environment, for example with `gh secret set NPM_TOKEN --env release`:
+- `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`, the API credentials from <https://addons.mozilla.org/developers/addon/api/key/>;
+- `NPM_TOKEN`, an npm automation token for the `@llyfn` scope.
+
+Only `v*` tags on `main` can use that environment, and each run waits for a maintainer's approval.
+
+For each release:
+
+1. Bump `version` in both `extension/manifest.json` and `package.json`. addons.mozilla.org won't sign a version twice.
+2. Commit, then push a matching tag, for example `git tag v0.3.0 && git push origin v0.3.0`.
+3. Approve the run in the Actions tab. The workflow then checks that the versions match the tag, runs the tests and lint, checks the npm token, signs the add-on, publishes to npm with provenance, and creates the release.
+
+</details>
+
+## License
+
+[MIT](LICENSE)
