@@ -195,6 +195,9 @@ export async function startHarness() {
     "run", "--source-dir", path.join(ROOT, "extension"), "--firefox", FIREFOX,
     "--no-reload", "--no-input", "--pref", "browser.tabs.groups.enabled=true", "--start-url", "about:blank",
     "--pref", "browser.download.folderList=2", "--pref", `browser.download.dir=${downloadDir}`, "--pref", "browser.download.alwaysOpenPanel=false",
+    // A new profile fetches its media plugins about 20 s after startup and writes each archive in a single IOUtils call.
+    // IOUtils runs calls one at a time, so on a slow disk that write holds up the downloads' own file operations for seconds.
+    "--pref", "media.gmp-manager.updateEnabled=false",
     // The Remote Agent's recommended prefs would change focus handling, popup blocking and background throttling, which these tests rely on.
     `--arg=--remote-debugging-port=${bidiPort}`, "--pref", "remote.prefs.recommended=false",
   ], { stdio: ["ignore", "pipe", "pipe"] });
