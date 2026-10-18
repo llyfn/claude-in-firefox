@@ -71,10 +71,13 @@ export function computerTool({ api, content, capture, watch = watchNavigation })
       const result = await act(tab, target.frameId, "input.click", { ...target.args, button, count, modifiers: args.modifiers ?? "" }, action);
       await moveCursor(tab.id, target.frameId, result.point);
       let text = `${verb} ${target.label}`;
-      for (const url of result.opened ?? []) {
+      // Page script that runs during the click can make the content script report any number of links.
+      const [url, ...notOpened] = result.opened ?? [];
+      if (url) {
         const opened = await api.tabs.create({ url, openerTabId: tab.id, windowId: tab.windowId, active: false });
         text += ` (link opened in new tab ${opened.id})`;
       }
+      if (notOpened.length) text += ` → ${notOpened.length} more new-tab link(s) from this click were not opened`;
       return text;
     }
     switch (action) {

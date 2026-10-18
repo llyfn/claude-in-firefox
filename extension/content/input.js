@@ -456,7 +456,8 @@
   }
 
   // A synthetic click on a target=_blank link would be popup-blocked, so new-tab links are
-  // cancelled here and opened by the background inside the session's tab group.
+  // cancelled here and opened by the background inside the session's tab group. Page script
+  // can click any number of links during one click: all are cancelled and only the first is kept.
   function watchNewTabLinks(win, flags) {
     const urls = [];
     const onClick = (event) => {
@@ -467,7 +468,7 @@
       const newTab = event.type === "auxclick" || flags.ctrlKey || flags.metaKey || (target !== "" && !["_self", "_parent", "_top"].includes(target));
       if (!newTab) return;
       event.preventDefault();
-      urls.push(link.href);
+      if (!urls.length) urls.push(link.href);
     };
     win.addEventListener("click", onClick);
     win.addEventListener("auxclick", onClick);
