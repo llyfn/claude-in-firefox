@@ -117,7 +117,7 @@ npm run build                          # package the add-on into web-ext-artifac
 
 `.github/workflows/release.yml` submits the add-on to addons.mozilla.org as a listed add-on, publishes `@llyfn/claude-in-firefox` to npm, and creates a GitHub release.
 
-Every release also sends the listing's summary, description, category and license from `amo-metadata.json`, so edit them there; changes made on addons.mozilla.org are overwritten. Screenshots and the icon are set in the [Developer Hub](https://addons.mozilla.org/developers/addons).
+Every release also sends the listing in `amo-metadata.json`, so edit the listing there; changes made on addons.mozilla.org are overwritten. Screenshots and the icon are set in the [Developer Hub](https://addons.mozilla.org/developers/addons).
 
 One-time setup: store three secrets in the repository's `release` environment, for example with `gh secret set NPM_TOKEN --env release`:
 - `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`, the API credentials from <https://addons.mozilla.org/developers/addon/api/key/>;
@@ -131,7 +131,7 @@ For each release:
 2. Commit, then push a matching tag, for example `git tag v0.3.0 && git push origin v0.3.0`.
 3. Approve the run in the Actions tab. The workflow then checks that the versions match the tag, runs the tests and lint, checks the npm token, submits the add-on, publishes to npm with provenance, and creates the release.
 
-The npm package is live as soon as the run ends, but the add-on version reaches users only after Mozilla reviews it. Keep each bridge release working with the previous add-on version.
+The npm package is live as soon as the run ends, but a new add-on version, and on the first release the listing page itself, reaches users only after Mozilla reviews it. Firefox then updates the add-on on its own, while the bridge changes only when users run the installer again. So each add-on version has to work with older bridges, and each bridge with the add-on version before it.
 
 </details>
 

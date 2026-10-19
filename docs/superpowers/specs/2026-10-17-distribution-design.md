@@ -13,7 +13,7 @@ Part 2 of the improvements found by comparing this project with similar Firefox 
 
 ## Non-goals
 
-macOS e2e in CI, npm provenance while the repository is private, Snap/Flatpak Firefox on Linux, automatic add-on updates, bundling the host into one file.
+macOS e2e in CI, npm provenance while the repository is private, Snap/Flatpak Firefox on Linux, bundling the host into one file.
 
 ## 1. Package
 
