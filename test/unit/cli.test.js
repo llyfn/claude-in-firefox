@@ -35,7 +35,7 @@ test("the install summary says what happened with Claude Code and shows the conf
   assert.match(registered, /Native messaging: {2}\/m\.json\n/);
   assert.match(registered, /Claude Code: registered the "firefox" MCP server\./);
   assert.match(registered, /"command": "\/node"/);
-  assert.match(registered, /https:\/\/github\.com\/llyfn\/claude-in-firefox\/releases\/latest/);
+  assert.match(registered, /https:\/\/addons\.mozilla\.org\/firefox\/addon\/claude-code-bridge-for-firefox\//);
   assert.match(formatInstall({ ...base, claudeStatus: "not-found" }), /Claude Code: `claude` was not found on PATH\. Register the server with:\n {2}claude mcp add/);
   assert.match(formatInstall({ ...base, claudeStatus: "skipped" }), /Claude Code: skipped \(--no-claude\)\. Register the server with:\n {2}claude mcp add/);
 });
