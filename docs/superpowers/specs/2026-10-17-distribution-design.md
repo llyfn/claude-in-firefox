@@ -18,7 +18,7 @@ macOS e2e in CI, npm provenance while the repository is private, Snap/Flatpak Fi
 ## 1. Package
 
 - `package.json`: `"name": "@llyfn/claude-in-firefox"`, no `private`, `"publishConfig": { "access": "public" }`, `"bin": { "claude-firefox": "host/src/cli.js" }`, `"files": ["host/src", "README.md", "LICENSE"]`, `"engines": { "node": ">=20" }`. Runtime dependency stays `@modelcontextprotocol/sdk` only.
-- The extension is not in the package; it keeps shipping as the signed `.xpi` on GitHub releases.
+- The extension is not in the package; it ships as a listed add-on on addons.mozilla.org, whose listing text comes from `amo-metadata.json`.
 
 ## 2. CLI
 
@@ -83,11 +83,11 @@ Unless `--no-claude`, when `claude` is on PATH outside any `node_modules` folder
   - `unit`: matrix ubuntu-latest, macos-latest, windows-latest, Node 24: `npm ci`, `npm test`; `npm run lint` on Ubuntu only.
   - `e2e`: matrix ubuntu-latest (under `xvfb-run`) and windows-latest: download Firefox Developer Edition from Mozilla (Linux tarball; Windows installer run silently), `npm ci`, `npm run install-host -- --no-claude`, `npm run e2e` with `FIREFOX_BIN` set.
 - E2E harness: probe `bridgeAddress()` instead of `SOCKET_PATH`, and default `FIREFOX_BIN` per platform.
-- `release.yml`: the tag must match both `extension/manifest.json` and `package.json`; after tests, lint, an `npm whoami` check of the token and AMO signing, `npm publish --access public` with `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` (setup-node `registry-url: https://registry.npmjs.org`), then the GitHub release.
+- `release.yml`: the tag must match both `extension/manifest.json` and `package.json`; after tests, lint, an `npm whoami` check of the token and submission to AMO as a listed add-on (`--amo-metadata amo-metadata.json`, `--approval-timeout 0` because review can outlast any timeout), `npm publish --access public` with `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` (setup-node `registry-url: https://registry.npmjs.org`), then the GitHub release.
 
 ## 7. Docs
 
-README sections: Install (signed `.xpi`, then `npx @llyfn/claude-in-firefox install`), Update, Uninstall, Other MCP clients (Claude Desktop config file per OS and the generic `mcpServers` JSON), Windows notes (registry key, pipe-name file), Development (clone, `npm run install-host`), Releasing (`NPM_TOKEN` alongside the AMO keys). Requirements: macOS, Linux or Windows; Node ≥ 20 to run.
+README sections: Install (the add-on from addons.mozilla.org, then `npx @llyfn/claude-in-firefox install`), Update, Uninstall, Other MCP clients (Claude Desktop config file per OS and the generic `mcpServers` JSON), Windows notes (registry key, pipe-name file), Development (clone, `npm run install-host`), Releasing (`NPM_TOKEN` alongside the AMO keys). Requirements: macOS, Linux or Windows; Node ≥ 20 to run.
 
 ## Testing
 

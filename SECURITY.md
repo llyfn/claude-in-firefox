@@ -6,7 +6,7 @@ Report vulnerabilities privately with **Report a vulnerability** on this reposit
 
 ## Supported versions
 
-Fixes go into the latest release only. Update with `npx @llyfn/claude-in-firefox@latest install` and the `.xpi` from the [latest release](https://github.com/llyfn/claude-in-firefox/releases/latest).
+Fixes go into the latest release only. Update the bridge with `npx @llyfn/claude-in-firefox@latest install`; Firefox updates the add-on from addons.mozilla.org.
 
 ## Scope
 
