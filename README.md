@@ -10,7 +10,7 @@ It works in your real profile, with your logins. Read [Safety](#safety) before y
 
 You need Firefox 140 or newer and Node 20 or newer, on macOS, Linux or Windows. On Linux, the Snap and Flatpak builds of Firefox are not supported.
 
-1. **Add-on.** Download the `.xpi` from the [latest release](https://github.com/llyfn/claude-in-firefox/releases/latest) and open it in Firefox.
+1. **Add-on.** Install [Claude Code Bridge for Firefox](https://addons.mozilla.org/firefox/addon/claude-code-bridge-for-firefox/) from addons.mozilla.org.
 2. **Bridge.** Run:
    ```bash
    npx @llyfn/claude-in-firefox install
@@ -69,7 +69,7 @@ Claude Code ──▶ claude-firefox mcp ──socket or pipe──▶ native ho
 
 ## Update and uninstall
 
-- **Update:** run `npx @llyfn/claude-in-firefox@latest install`, then install the `.xpi` from the new release. The add-on doesn't update itself.
+- **Update:** run `npx @llyfn/claude-in-firefox@latest install`. Firefox updates the add-on from addons.mozilla.org on its own.
 - **Uninstall:** run `npx @llyfn/claude-in-firefox uninstall`, then remove the add-on in `about:addons`. This removes the Claude Code entry, the Firefox registration and the bridge's files. `--no-claude` keeps the Claude Code entry.
 
 With `--no-claude`, or when `claude` isn't on your PATH, the installer prints the `claude mcp add` command for you to run. If a `firefox` entry already exists, remove it first with `claude mcp remove --scope user firefox`.
@@ -115,7 +115,9 @@ npm run build                          # package the add-on into web-ext-artifac
 <details>
 <summary>Releasing (maintainers)</summary>
 
-`.github/workflows/release.yml` signs the add-on with addons.mozilla.org as an unlisted add-on, publishes `@llyfn/claude-in-firefox` to npm, and attaches the signed `.xpi` to a GitHub release.
+`.github/workflows/release.yml` submits the add-on to addons.mozilla.org as a listed add-on, publishes `@llyfn/claude-in-firefox` to npm, and creates a GitHub release.
+
+Every release also sends the listing in `amo-metadata.json`, so edit the listing there; changes made on addons.mozilla.org are overwritten. Screenshots and the icon are set in the [Developer Hub](https://addons.mozilla.org/developers/addons).
 
 One-time setup: store three secrets in the repository's `release` environment, for example with `gh secret set NPM_TOKEN --env release`:
 - `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`, the API credentials from <https://addons.mozilla.org/developers/addon/api/key/>;
@@ -127,7 +129,9 @@ For each release:
 
 1. Bump `version` in both `extension/manifest.json` and `package.json`. addons.mozilla.org won't sign a version twice.
 2. Commit, then push a matching tag, for example `git tag v0.3.0 && git push origin v0.3.0`.
-3. Approve the run in the Actions tab. The workflow then checks that the versions match the tag, runs the tests and lint, checks the npm token, signs the add-on, publishes to npm with provenance, and creates the release.
+3. Approve the run in the Actions tab. The workflow then checks that the versions match the tag, runs the tests and lint, checks the npm token, submits the add-on, publishes to npm with provenance, and creates the release.
+
+The npm package is live as soon as the run ends, but a new add-on version, and on the first release the listing page itself, reaches users only after Mozilla reviews it. Firefox then updates the add-on on its own, while the bridge changes only when users run the installer again. So each add-on version has to work with older bridges, and each bridge with the add-on version before it.
 
 </details>
 

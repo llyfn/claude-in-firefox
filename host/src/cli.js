@@ -41,7 +41,7 @@ export function formatInstall({ appDir, manifestPath, claudeStatus, claudeError,
     "Other MCP clients (Claude Desktop and others): add this to their MCP configuration:",
     JSON.stringify(mcpConfig, null, 2),
     "",
-    "Install the Firefox add-on from https://github.com/llyfn/claude-in-firefox/releases/latest if you have not yet.",
+    "Install the Firefox add-on from https://addons.mozilla.org/firefox/addon/claude-code-bridge-for-firefox/ if you have not yet.",
   ].join("\n");
 }
 
