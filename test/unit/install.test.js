@@ -10,6 +10,7 @@ import { findExecutable, install, runCommand, stableNodePath, uninstall } from "
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8")).version;
+const ADDON_ID = JSON.parse(fs.readFileSync(path.join(REPO, "extension/manifest.json"), "utf8")).browser_specific_settings.gecko.id;
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "cfb-install-"));
 const PIPE = /^\\\\\.\\pipe\\claude-firefox-bridge-[0-9a-f]{32}\n$/;
 const KEY = /^[0-9a-f]{64}\n$/;
@@ -93,7 +94,7 @@ test("install from a clone packs it, installs the tarball into the app directory
     description: "Claude Code Bridge for Firefox",
     path: result.wrapperPath,
     type: "stdio",
-    allowed_extensions: ["claude-firefox-bridge@local"],
+    allowed_extensions: [ADDON_ID],
   });
   assert.deepEqual(result.mcpConfig, { mcpServers: { firefox: { command: "/opt/node/bin/node", args: [cli, "mcp"] } } });
   assert.equal(result.claudeCommand, `claude mcp add --scope user firefox -- '/opt/node/bin/node' '${cli}' mcp`);

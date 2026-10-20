@@ -49,7 +49,7 @@ The package lives at `<appDir>/node_modules/@llyfn/claude-in-firefox` (`pkgDir`)
    - macOS/Linux `native-host`: `#!/bin/sh` + `exec '<node>' '<pkgDir>/host/src/native-host.js' "$@"`, each path single-quoted with `'` written as `'\''`, mode 0755.
    - Windows `native-host.cmd`: `@echo off` + `"<node>" "<pkgDir>\host\src\native-host.js" %*`, with every `%` in the node path doubled, CRLF line endings.
 4. **Windows pipe name and key.** Unless `<appDir>\pipe-name` holds a valid name, write `\\.\pipe\claude-firefox-bridge-<32 random hex chars>` to it. Unless `<appDir>\pipe-key` holds 64 lowercase hex chars, write 32 random bytes as hex to it. Valid files are kept.
-5. **Native messaging manifest** `{ name: "claude_firefox_bridge", description: "Claude Code Bridge for Firefox", path: <wrapper>, type: "stdio", allowed_extensions: ["claude-firefox-bridge@local"] }`:
+5. **Native messaging manifest** `{ name: "claude_firefox_bridge", description: "Claude Code Bridge for Firefox", path: <wrapper>, type: "stdio", allowed_extensions: ["claude-code-bridge@llyfn.github.io"] }`:
    - macOS: `~/Library/Application Support/Mozilla/NativeMessagingHosts/claude_firefox_bridge.json`
    - Linux: `~/.mozilla/native-messaging-hosts/claude_firefox_bridge.json`
    - Windows: `<appDir>\claude_firefox_bridge.json`, plus `reg add "HKCU\Software\Mozilla\NativeMessagingHosts\claude_firefox_bridge" /ve /t REG_SZ /d "<manifest path>" /f`.
