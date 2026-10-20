@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const HOST_NAME = "claude_firefox_bridge";
-export const EXTENSION_ID = "claude-firefox-bridge@local";
+export const EXTENSION_ID = "claude-code-bridge@llyfn.github.io";
 
 export const PACKAGE_NAME = "@llyfn/claude-in-firefox";
 export const PACKAGE_VERSION = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
