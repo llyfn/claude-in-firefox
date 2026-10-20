@@ -47,10 +47,12 @@ Claude Code ──▶ claude-firefox mcp ──socket or pipe──▶ native ho
 
 - **It acts as you.** Claude uses your logged-in sessions. The add-on blocks no sites and asks no per-site permission; Claude Code's own permission settings are the only gate.
 - **Prompt injection is a real risk.** A page can contain text written to steer Claude. Be careful on sensitive sites, especially if you run Claude Code without permission prompts.
-- **Stop button.** Every page in a session window shows a "Claude is using this window · Stop" bar. Stop cancels the running call and blocks all later calls until you press Resume. Only a real click works; Claude's synthetic input can't press it.
-  - Some pages can't show the bar: `about:` pages (including a new window's blank tab), other add-ons' pages, PDFs and restricted sites. On those, close the window to end the session.
+- **Stop button.** Pages in a session window show a "Claude is using this window · Stop" bar. Stop blocks the session's browser calls until you press Resume and tells Claude to ask you how to continue. A call already running returns at once, though what it started in the page can still finish. Only a real click works; Claude's synthetic input can't press it.
+  - Some pages can't show the bar: `about:` pages (including a new window's blank tab), other add-ons' pages, PDFs and restricted sites. On those, press Stop in another tab of the window, or interrupt Claude Code.
+  - Closing the window doesn't stop Claude, and it clears a Stop: Claude can open a new window with `tabs_context`.
 - **Dialogs are answered automatically** in session tabs, and Claude sees each answer: `alert()` is dismissed, `confirm()` gets OK, `prompt()` gets its default text, and "Leave page?" prompts are skipped. While a session is stopped, dialogs appear normally.
 - **What's redacted.** Password, one-time-code and payment-card fields show as hidden in `read_page` and `form_input`. Nothing else is redacted: screenshots and console and network logs can show sensitive data.
+- **Where data goes.** What Claude reads from session tabs goes through the bridge to Claude Code, which sends it to Claude as part of your conversation. The add-on itself makes no network requests. It keeps the console and network logs of every tab in memory, but Claude can read them only from tabs in its window, including a tab you move into it.
 - **Domain guard.** Input stops if the tab moves to another domain in the middle of an action.
 - **Firefox's own limits still apply.** No add-on can touch `about:` pages, other add-ons' pages, or the domains in the `extensions.webextensions.restrictedDomains` pref, such as addons.mozilla.org. To allow those domains, clear that pref and set `privacy.resistFingerprinting.block_mozAddonManager` to `true` in `about:config`. The installer never changes Firefox prefs.
 
