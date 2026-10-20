@@ -4,8 +4,6 @@ Let Claude Code drive your everyday Firefox: open tabs, click, type, read pages,
 
 It works in your real profile, with your logins. Read [Safety](#safety) before you use it on sites that matter.
 
-> An independent project, not affiliated with or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic, PBC.
-
 ## Quick start
 
 You need Firefox 140 or newer and Node 20 or newer, on macOS, Linux or Windows. On Linux, the Snap and Flatpak builds of Firefox are not supported.
