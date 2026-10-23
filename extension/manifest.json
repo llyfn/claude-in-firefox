@@ -4,6 +4,7 @@
   "version": "0.3.0",
   "description": "Lets Claude Code drive this Firefox through a local MCP bridge.",
   "homepage_url": "https://github.com/llyfn/claude-in-firefox",
+  "icons": { "48": "icons/icon.svg", "96": "icons/icon.svg" },
   "browser_specific_settings": {
     "gecko": {
       "id": "claude-code-bridge@llyfn.github.io",
