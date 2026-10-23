@@ -121,7 +121,7 @@ Every release also sends the listing in `amo-metadata.json`, so edit the listing
 
 One-time setup: store three secrets in the repository's `release` environment, for example with `gh secret set NPM_TOKEN --env release`:
 - `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`, the API credentials from <https://addons.mozilla.org/developers/addon/api/key/>;
-- `NPM_TOKEN`, an npm automation token for the `@llyfn` scope.
+- `NPM_TOKEN`, an npm granular access token with read and write access to `@llyfn/claude-in-firefox` and "Bypass two-factor authentication" ticked. Write tokens expire within 90 days, so check it before each release.
 
 Only `v*` tags on `main` can use that environment, and each run waits for a maintainer's approval.
 
