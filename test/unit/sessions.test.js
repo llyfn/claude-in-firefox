@@ -96,8 +96,8 @@ test("createIfEmpty opens one unfocused window with a blank tab, labelled and re
   const ctx = await sessions.context(ID, { createIfEmpty: true });
   assert.deepEqual(ctx, { availableTabs: [{ tabId: 1, title: "", url: "about:blank" }], windowId: 10 });
   assert.equal(windows.get(10).focused, false);
-  assert.equal(windows.get(10).titlePreface, "Claude · abcd1234 — ");
-  assert.deepEqual([...groups.values()].map((g) => [g.title, g.color]), [["Claude · abcd1234", "orange"]]);
+  assert.equal(windows.get(10).titlePreface, "Claude · abcd — ");
+  assert.deepEqual([...groups.values()].map((g) => [g.title, g.color]), [["Claude · abcd", "orange"]]);
   assert.deepEqual(values.get("10:claudeSession"), { sessionId: ID, role: "main", stopped: false });
   assert.equal((await sessions.context(ID, { createIfEmpty: true })).availableTabs.length, 1);
   assert.equal(windows.size, 1);
@@ -159,7 +159,7 @@ test("sessions work when tab groups are disabled", async () => {
   const { api, windows } = fakeApi({ groups: false });
   const sessions = createSessions(api);
   const ctx = await sessions.context(ID, { createIfEmpty: true });
-  assert.equal(windows.get(ctx.windowId).titlePreface, "Claude · abcd1234 — ");
+  assert.equal(windows.get(ctx.windowId).titlePreface, "Claude · abcd — ");
   const tab = await sessions.createTab(ID);
   assert.equal((await sessions.ownedTab(ID, tab.id)).id, tab.id);
 });
@@ -260,15 +260,15 @@ test("status and stop state change the label, and a stopped session keeps the st
   const ctx = await sessions.context(ID, { createIfEmpty: true });
   const group = () => [...groups.values()][0].title;
   await sessions.setStatus(ID, "busy");
-  assert.equal(group(), "⌛ Claude · abcd1234");
-  assert.equal(windows.get(ctx.windowId).titlePreface, "⌛ Claude · abcd1234 — ");
+  assert.equal(group(), "Claude · abcd · working");
+  assert.equal(windows.get(ctx.windowId).titlePreface, "Claude · abcd · working — ");
   await sessions.setStopped(ID, true);
-  assert.equal(group(), "⏸ Claude · abcd1234");
+  assert.equal(group(), "Claude · abcd · stopped");
   assert.equal(values.get(`${ctx.windowId}:claudeSession`).stopped, true);
   await sessions.setStatus(ID, "idle");
-  assert.equal(group(), "⏸ Claude · abcd1234");
+  assert.equal(group(), "Claude · abcd · stopped");
   await sessions.setStopped(ID, false);
-  assert.equal(group(), "✅ Claude · abcd1234");
+  assert.equal(group(), "Claude · abcd");
 });
 
 test("tab changes since the last report are described once", async () => {
@@ -325,7 +325,7 @@ test("a failing window value save does not leave the session half-built", async 
   api.sessions.setWindowValue = async () => { throw new Error("nope"); };
   const sessions = createSessions(api);
   const ctx = await sessions.context(ID, { createIfEmpty: true });
-  assert.equal(windows.get(ctx.windowId).titlePreface, "Claude · abcd1234 — ");
+  assert.equal(windows.get(ctx.windowId).titlePreface, "Claude · abcd — ");
 });
 
 test("closing the main window also clears the popup windows' values", async () => {
@@ -497,7 +497,7 @@ describe("grouped sessions", () => {
     assert.equal(tab.active, false);
     assert.equal(tabs.get(mine.id).active, true);
     assert.equal(tabs.get(mine.id).groupId, -1);
-    assert.deepEqual([...groups.values()].map((g) => g.title), ["Claude · abcd1234"]);
+    assert.deepEqual([...groups.values()].map((g) => g.title), ["Claude · abcd"]);
     assert.equal(windows.size, 1);
     assert.equal(windows.get(user).titlePreface, "");
     assert.deepEqual(values.get(`${user}:claudeSession:${ID}`), { sessionId: ID, role: "main", stopped: false });
@@ -539,7 +539,7 @@ describe("grouped sessions", () => {
     groups.clear();
     const tab = await sessions.createTab(ID);
     assert.equal((await sessions.ownedTab(ID, tab.id)).id, tab.id);
-    assert.deepEqual([...groups.values()].map((g) => g.title), ["Claude · abcd1234"]);
+    assert.deepEqual([...groups.values()].map((g) => g.title), ["Claude · abcd"]);
   });
 
   test("without tab groups no session starts and no tab is left behind", async () => {

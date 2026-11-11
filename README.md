@@ -23,7 +23,7 @@ Claude Code ──▶ claude-firefox mcp ──socket or pipe──▶ native ho
 ```
 
 - Each Claude Code session gets its own Firefox window, opened behind yours. It can only touch tabs in that window, plus popups opened from them. Zen works differently; see [Zen](#zen).
-- The window title, and the tab group when tab groups are on, show the session's status: ⌛ working, ✅ idle, ⏸ stopped.
+- The window title, and the tab group when tab groups are on, name the session, for example `Claude · d42a`, and add `working` while Claude is acting or `stopped` after you press Stop.
 - A violet glow and a cursor show which tab Claude is working in.
 - On Windows the two halves of the bridge talk over a named pipe. Before using the pipe, the MCP server checks that the process at the other end holds a key that only your user account can read.
 

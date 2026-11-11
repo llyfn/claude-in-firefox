@@ -1,6 +1,6 @@
 const COLORS = ["orange", "blue", "green", "purple", "cyan", "pink", "yellow", "red"];
 const KEY = "claudeSession";
-const STATUS_PREFIX = { new: "", busy: "⌛ ", idle: "✅ " };
+const STATUS_SUFFIX = { new: "", busy: " · working", idle: "" };
 export const NO_SESSION_MESSAGE = "This session has no window yet. Call tabs_context with createIfEmpty: true first.";
 export const NEEDS_GROUPS_MESSAGE = "Claude sessions in this browser need tab groups. Set browser.tabs.groups.enabled to true in about:config.";
 
@@ -12,8 +12,8 @@ export function createSessions(api, { onLoaded = () => {}, grouped = false } = {
   let opening = Promise.resolve();
   let nextColor = 0;
 
-  const tagOf = (sessionId) => `Claude · ${sessionId.slice(0, 8)}`;
-  const labelOf = (rec) => `${rec.stopped ? "⏸ " : STATUS_PREFIX[rec.status]}${tagOf(rec.id)}`;
+  const tagOf = (sessionId) => `Claude · ${sessionId.slice(0, 4)}`;
+  const labelOf = (rec) => `${tagOf(rec.id)}${rec.stopped ? " · stopped" : STATUS_SUFFIX[rec.status]}`;
 
   // Firefox may leave the tab group APIs undefined instead of rejecting when groups are disabled.
   const groupCall = (fn) => Promise.resolve().then(fn);
@@ -72,7 +72,7 @@ export function createSessions(api, { onLoaded = () => {}, grouped = false } = {
     }
     if (rec.main == null) return null;
     const groups = await groupCall(() => api.tabGroups.query({ windowId: rec.main })).catch(() => []);
-    const group = groups.find((g) => g.title?.endsWith(tagOf(sessionId)));
+    const group = groups.find((g) => g.title === tagOf(sessionId) || g.title?.startsWith(`${tagOf(sessionId)} · `));
     rec.groupId = group?.id ?? null;
     rec.color = group?.color ?? null;
     return rec;
