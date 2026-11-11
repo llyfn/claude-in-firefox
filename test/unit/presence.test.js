@@ -66,3 +66,15 @@ test("a tab that answered dialogsEnabled is switched off when it leaves the sess
   await presence.refreshTab({ id: 1 });
   assert.deepEqual(calls, [[1, "indicator.session", null], [1, "dialogs.enable", false]]);
 });
+
+test("a tab moving into or out of a group is refreshed, and other updates before load completes are not", async () => {
+  let onUpdated;
+  const refreshed = [];
+  const tabs = { onUpdated: { addListener: (fn) => { onUpdated = fn; } }, onAttached: { addListener: () => {} }, onRemoved: { addListener: () => {} }, sendMessage: async () => {} };
+  const sessions = { sessionOfTab: async () => "s", isStopped: async () => false };
+  createPresence({ api: { tabs }, content: { call: async (tabId) => { refreshed.push(tabId); } }, sessions }).install();
+  onUpdated(1, { groupId: 5 }, { id: 1 });
+  onUpdated(2, { title: "x" }, { id: 2 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(refreshed, [1]);
+});

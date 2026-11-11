@@ -39,7 +39,7 @@ export function createPresence({ api, content, sessions }) {
     },
     install() {
       api.tabs.onUpdated.addListener((tabId, info, tab) => {
-        if (info.status === "complete") refreshTab(tab).catch(() => {});
+        if (info.status === "complete" || "groupId" in info) refreshTab(tab).catch(() => {});
       });
       api.tabs.onAttached.addListener((tabId) => {
         api.tabs.get(tabId).then(refreshTab).catch(() => {});
