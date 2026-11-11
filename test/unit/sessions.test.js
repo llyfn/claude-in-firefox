@@ -1,7 +1,7 @@
-import test from "node:test";
+import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import { createPresence } from "../../extension/background/presence.js";
-import { NO_SESSION_MESSAGE, createSessions } from "../../extension/background/sessions.js";
+import { NEEDS_GROUPS_MESSAGE, NO_SESSION_MESSAGE, createSessions } from "../../extension/background/sessions.js";
 
 function fakeApi({ groups: groupsEnabled = true, noGroupApi = false } = {}) {
   let nextTab = 1;
@@ -56,11 +56,14 @@ function fakeApi({ groups: groupsEnabled = true, noGroupApi = false } = {}) {
       group: async ({ tabIds, groupId }) => {
         if (!groupsEnabled) throw new Error("Tab groups are disabled");
         const ids = [].concat(tabIds);
+        if (groupId != null && !groups.has(groupId)) throw new Error(`No group with id: ${groupId}`);
         const id = groupId ?? nextGroup++;
         if (!groups.has(id)) groups.set(id, { title: "", color: "", windowId: tabs.get(ids[0]).windowId });
         for (const tabId of ids) tabs.get(tabId).groupId = id;
         return id;
       },
+      ungroup: async (tabIds) => { for (const id of [].concat(tabIds)) tabs.get(id).groupId = -1; },
+      remove: async (tabIds) => { for (const id of [].concat(tabIds)) tabs.delete(id); },
       update: async (id, props) => { Object.assign(tabs.get(id), props); },
     },
     tabGroups: {
@@ -70,6 +73,7 @@ function fakeApi({ groups: groupsEnabled = true, noGroupApi = false } = {}) {
   };
   if (noGroupApi) {
     delete api.tabs.group;
+    delete api.tabs.ungroup;
     delete api.tabGroups;
   }
   const closeWindow = (id) => {
@@ -473,4 +477,107 @@ test("closing the main window reports the popup tabs that left the session", asy
   const left = await sessions.windowRemoved(ctx.windowId);
   assert.deepEqual(left.map((t) => t.id), [popup.id]);
   assert.equal(await sessions.sessionOfTab(left[0]), null);
+});
+
+describe("grouped sessions", () => {
+  const OTHER = "efgh5678-0000-4000-8000-000000000000";
+  const setup = (options) => {
+    const fake = fakeApi(options);
+    const user = fake.addWindow({ focused: true });
+    const mine = fake.addTab({ windowId: user, url: "https://mine.test/", active: true });
+    return { ...fake, user, mine, sessions: createSessions(fake.api, { grouped: Promise.resolve(true) }) };
+  };
+
+  test("createIfEmpty adds one background tab in a group of the user's window and opens no window", async () => {
+    const { sessions, windows, groups, tabs, values, user, mine } = setup();
+    const ctx = await sessions.context(ID, { createIfEmpty: true });
+    assert.equal(ctx.windowId, user);
+    assert.equal(ctx.availableTabs.length, 1);
+    const tab = tabs.get(ctx.availableTabs[0].tabId);
+    assert.equal(tab.active, false);
+    assert.equal(tabs.get(mine.id).active, true);
+    assert.equal(tabs.get(mine.id).groupId, -1);
+    assert.deepEqual([...groups.values()].map((g) => g.title), ["Claude · abcd1234"]);
+    assert.equal(windows.size, 1);
+    assert.equal(windows.get(user).titlePreface, "");
+    assert.deepEqual(values.get(`${user}:claudeSession:${ID}`), { sessionId: ID, role: "main", stopped: false });
+    assert.equal(values.has(`${user}:claudeSession`), false);
+  });
+
+  test("the user's tabs in the same window are refused, and tabs in the group are accepted", async () => {
+    const { sessions, mine } = setup();
+    const ctx = await sessions.context(ID, { createIfEmpty: true });
+    const own = ctx.availableTabs[0].tabId;
+    assert.equal((await sessions.ownedTab(ID, own)).id, own);
+    await assert.rejects(sessions.ownedTab(ID, mine.id), { message: `Tab ${mine.id} is not in this session's tab group. Valid tab IDs: ${own}` });
+    assert.equal(await sessions.sessionOfTab(mine), null);
+  });
+
+  test("two sessions in one window each own only their own group", async () => {
+    const { sessions } = setup();
+    const a = (await sessions.context(ID, { createIfEmpty: true })).availableTabs[0].tabId;
+    const b = (await sessions.context(OTHER, { createIfEmpty: true })).availableTabs[0].tabId;
+    await assert.rejects(sessions.ownedTab(ID, b), /not in this session's tab group/);
+    await assert.rejects(sessions.ownedTab(OTHER, a), /not in this session's tab group/);
+  });
+
+  test("createTab adds a background tab to the group, and activate leaves the user's tab in front", async () => {
+    const { sessions, tabs, mine } = setup();
+    const ctx = await sessions.context(ID, { createIfEmpty: true });
+    const tab = await sessions.createTab(ID);
+    assert.equal(tabs.get(tab.id).active, false);
+    assert.equal(tabs.get(tab.id).groupId, tabs.get(ctx.availableTabs[0].tabId).groupId);
+    await sessions.activate(tabs.get(tab.id));
+    assert.equal(tabs.get(tab.id).active, false);
+    assert.equal(tabs.get(mine.id).active, true);
+  });
+
+  test("a new group replaces one whose tabs were all closed", async () => {
+    const { sessions, tabs, groups } = setup();
+    const ctx = await sessions.context(ID, { createIfEmpty: true });
+    tabs.delete(ctx.availableTabs[0].tabId);
+    groups.clear();
+    const tab = await sessions.createTab(ID);
+    assert.equal((await sessions.ownedTab(ID, tab.id)).id, tab.id);
+    assert.deepEqual([...groups.values()].map((g) => g.title), ["Claude · abcd1234"]);
+  });
+
+  test("without tab groups no session starts and no tab is left behind", async () => {
+    const { sessions, tabs, mine } = setup({ groups: false });
+    await assert.rejects(sessions.context(ID, { createIfEmpty: true }), { message: NEEDS_GROUPS_MESSAGE });
+    assert.deepEqual([...tabs.keys()], [mine.id]);
+  });
+
+  test("tabs opened from a session tab join the group, and tabs opened from the user's tabs do not", async () => {
+    const { sessions, addTab, tabs, user, mine } = setup();
+    const own = (await sessions.context(ID, { createIfEmpty: true })).availableTabs[0].tabId;
+    const child = addTab({ windowId: user, url: "https://x.test/", openerTabId: own });
+    await sessions.adoptOpened(child);
+    assert.equal((await sessions.ownedTab(ID, child.id)).id, child.id);
+    const users = addTab({ windowId: user, url: "https://y.test/", openerTabId: mine.id });
+    await sessions.adoptOpened(users);
+    assert.equal(tabs.get(users.id).groupId, -1);
+  });
+
+  test("a reloaded background recovers the group and its stop state", async () => {
+    const { api, sessions, tabs, user, mine } = setup();
+    const own = (await sessions.context(ID, { createIfEmpty: true })).availableTabs[0].tabId;
+    await sessions.setStopped(ID, true);
+    const reloaded = createSessions(api);
+    const ctx = await reloaded.context(ID);
+    assert.deepEqual([ctx.windowId, ctx.availableTabs.map((t) => t.tabId)], [user, [own]]);
+    assert.equal(await reloaded.isStopped(ID), true);
+    assert.equal(await reloaded.sessionOfTab(tabs.get(mine.id)), null);
+  });
+
+  test("close ungroups the session's tabs, keeps them open and clears its value", async () => {
+    const { sessions, tabs, values, windows, user } = setup();
+    const own = (await sessions.context(ID, { createIfEmpty: true })).availableTabs[0].tabId;
+    const left = await sessions.close(ID);
+    assert.deepEqual(left.map((t) => t.id), [own]);
+    assert.equal(tabs.get(own).groupId, -1);
+    assert.equal(values.size, 0);
+    assert.equal(windows.get(user).titlePreface, "");
+    assert.equal(await sessions.context(ID), null);
+  });
 });

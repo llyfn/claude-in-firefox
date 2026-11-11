@@ -15,7 +15,10 @@ import { tabTools } from "./tools/tabs.js";
 
 const api = browser;
 const content = createContent(api);
-const sessions = createSessions(api, { onLoaded: (sessionId) => { presence.refreshSession(sessionId).catch(() => {}); } });
+// Zen copies every tab into every normal window, so a window of its own would hold all of the user's tabs.
+// Zen reports its name as "Firefox" and adds a zen field.
+const grouped = api.runtime.getBrowserInfo().then((info) => info.zen != null, () => false);
+const sessions = createSessions(api, { grouped, onLoaded: (sessionId) => { presence.refreshSession(sessionId).catch(() => {}); } });
 const activity = createActivity({ api, content });
 const capture = createCapture({ api, content });
 const presence = createPresence({ api, content, sessions });

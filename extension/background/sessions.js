@@ -2,8 +2,10 @@ const COLORS = ["orange", "blue", "green", "purple", "cyan", "pink", "yellow", "
 const KEY = "claudeSession";
 const STATUS_PREFIX = { new: "", busy: "⌛ ", idle: "✅ " };
 export const NO_SESSION_MESSAGE = "This session has no window yet. Call tabs_context with createIfEmpty: true first.";
+export const NEEDS_GROUPS_MESSAGE = "Claude sessions in this browser need tab groups. Set browser.tabs.groups.enabled to true in about:config.";
 
-export function createSessions(api, { onLoaded = () => {} } = {}) {
+// A grouped session lives in a tab group of the user's window and owns only the tabs in that group, plus its popup windows.
+export function createSessions(api, { onLoaded = () => {}, grouped = false } = {}) {
   const records = new Map();
   const creating = new Map();
   const recovering = new Map();
@@ -17,8 +19,10 @@ export function createSessions(api, { onLoaded = () => {} } = {}) {
   const groupCall = (fn) => Promise.resolve().then(fn);
 
   function newRecord(sessionId) {
-    return { id: sessionId, main: null, windows: new Set(), groupId: null, color: null, status: "new", stopped: false, known: null };
+    return { id: sessionId, main: null, windows: new Set(), grouped: false, groupId: null, color: null, status: "new", stopped: false, known: null };
   }
+
+  const owns = (rec, tab) => rec.windows.has(tab.windowId) && !(rec.grouped && tab.windowId === rec.main && tab.groupId !== rec.groupId);
 
   function register(rec) {
     rec.color ??= COLORS[nextColor++ % COLORS.length];
@@ -27,26 +31,44 @@ export function createSessions(api, { onLoaded = () => {} } = {}) {
 
   async function applyLabel(rec) {
     const label = labelOf(rec);
-    await api.windows.update(rec.main, { titlePreface: `${label} — ` }).catch(() => {});
+    if (!rec.grouped) await api.windows.update(rec.main, { titlePreface: `${label} — ` }).catch(() => {});
     if (rec.groupId != null) await groupCall(() => api.tabGroups.update(rec.groupId, { title: label, color: rec.color })).catch(() => {});
   }
 
-  const persist = (rec, windowId) => api.sessions.setWindowValue(windowId, KEY, { sessionId: rec.id, role: windowId === rec.main ? "main" : "popup", stopped: rec.stopped });
+  // Several grouped sessions can share the user's window, so each keeps its own value there.
+  const keyOf = (rec, windowId) => (rec.grouped && windowId === rec.main ? `${KEY}:${rec.id}` : KEY);
+  const persist = (rec, windowId) => api.sessions.setWindowValue(windowId, keyOf(rec, windowId), { sessionId: rec.id, role: windowId === rec.main ? "main" : "popup", stopped: rec.stopped });
 
   async function tabsOf(rec) {
     const lists = await Promise.all([...rec.windows].map((windowId) => api.tabs.query({ windowId })));
-    return lists.flat();
+    return lists.flat().filter((tab) => owns(rec, tab));
+  }
+
+  // Resolves to false when the tabs could not be grouped. A group whose tabs all closed is gone, so a new one replaces it.
+  async function joinGroup(rec, tabIds) {
+    if (rec.groupId != null && (await groupCall(() => api.tabs.group({ groupId: rec.groupId, tabIds })).then(() => true, () => false))) return true;
+    const groupId = await groupCall(() => api.tabs.group({ tabIds, createProperties: { windowId: rec.main } })).catch(() => null);
+    if (groupId == null) return false;
+    rec.groupId = groupId;
+    // A session still being created is labelled once it is registered.
+    if (records.get(rec.id) === rec) await applyLabel(rec);
+    return true;
   }
 
   // Window values survive add-on reloads and Firefox restarts, unlike this background page's memory.
   async function scan(sessionId) {
     const rec = newRecord(sessionId);
     for (const win of await api.windows.getAll()) {
-      const value = await api.sessions.getWindowValue(win.id, KEY).catch(() => undefined);
-      if (value?.sessionId !== sessionId) continue;
-      rec.windows.add(win.id);
-      if (value.role === "main") rec.main = win.id;
-      if (value.stopped) rec.stopped = true;
+      for (const key of [KEY, `${KEY}:${sessionId}`]) {
+        const value = await api.sessions.getWindowValue(win.id, key).catch(() => undefined);
+        if (value?.sessionId !== sessionId) continue;
+        rec.windows.add(win.id);
+        if (value.role === "main") {
+          rec.main = win.id;
+          rec.grouped = key !== KEY;
+        }
+        if (value.stopped) rec.stopped = true;
+      }
     }
     if (rec.main == null) return null;
     const groups = await groupCall(() => api.tabGroups.query({ windowId: rec.main })).catch(() => []);
@@ -90,20 +112,33 @@ export function createSessions(api, { onLoaded = () => {} } = {}) {
   }
 
   async function create(sessionId) {
-    const win = await openWindow();
     const rec = newRecord(sessionId);
-    rec.main = win.id;
-    rec.windows.add(win.id);
+    rec.grouped = await grouped;
+    let tabIds;
+    if (rec.grouped) {
+      const win = await api.windows.getLastFocused({ windowTypes: ["normal"] });
+      const tab = await api.tabs.create({ windowId: win.id, url: "about:blank", active: false });
+      rec.main = win.id;
+      tabIds = [tab.id];
+    } else {
+      const win = await openWindow();
+      rec.main = win.id;
+      tabIds = win.tabs.map((t) => t.id);
+    }
+    rec.windows.add(rec.main);
+    if (!(await joinGroup(rec, tabIds)) && rec.grouped) {
+      await api.tabs.remove(tabIds).catch(() => {});
+      throw new Error(NEEDS_GROUPS_MESSAGE);
+    }
     register(rec);
-    await persist(rec, win.id).catch(() => {});
-    rec.groupId = await groupCall(() => api.tabs.group({ tabIds: win.tabs.map((t) => t.id), createProperties: { windowId: win.id } })).catch(() => null);
+    await persist(rec, rec.main).catch(() => {});
     await applyLabel(rec);
     onLoaded(sessionId);
     return rec;
   }
 
-  function recordOfWindow(windowId) {
-    for (const rec of records.values()) if (rec.windows.has(windowId)) return rec;
+  function recordOfTab(tab) {
+    for (const rec of records.values()) if (owns(rec, tab)) return rec;
     return null;
   }
 
@@ -126,8 +161,11 @@ export function createSessions(api, { onLoaded = () => {} } = {}) {
     async createTab(sessionId) {
       const rec = await find(sessionId);
       if (!rec) throw new Error(NO_SESSION_MESSAGE);
-      const tab = await api.tabs.create({ windowId: rec.main, url: "about:blank", active: true });
-      if (rec.groupId != null) await groupCall(() => api.tabs.group({ groupId: rec.groupId, tabIds: [tab.id] })).catch(() => {});
+      const tab = await api.tabs.create({ windowId: rec.main, url: "about:blank", active: !rec.grouped });
+      if (!(await joinGroup(rec, [tab.id])) && rec.grouped) {
+        await api.tabs.remove(tab.id).catch(() => {});
+        throw new Error(NEEDS_GROUPS_MESSAGE);
+      }
       return tab;
     },
 
@@ -135,24 +173,25 @@ export function createSessions(api, { onLoaded = () => {} } = {}) {
       const rec = await find(sessionId);
       if (!rec) throw new Error(NO_SESSION_MESSAGE);
       const tab = await api.tabs.get(tabId).catch(() => null);
-      if (tab && rec.windows.has(tab.windowId)) return tab;
+      if (tab && owns(rec, tab)) return tab;
       const valid = (await tabsOf(rec)).map((t) => t.id);
-      throw new Error(`Tab ${tabId} is not in this session's window. Valid tab IDs: ${valid.join(", ") || "none"}`);
+      throw new Error(`Tab ${tabId} is not in this session's ${rec.grouped ? "tab group" : "window"}. Valid tab IDs: ${valid.join(", ") || "none"}`);
     },
 
+    // A grouped session's tabs sit in the user's window, where switching tabs would take the user's view.
     async activate(tab) {
-      if (!tab.active) await api.tabs.update(tab.id, { active: true }).catch(() => {});
+      if (!tab.active && !recordOfTab(tab)?.grouped) await api.tabs.update(tab.id, { active: true }).catch(() => {});
     },
 
-    // A page in a session window that opens a tab keeps it in that window; one that opens a popup
+    // A session page that opens a tab keeps it in the session's window and group; one that opens a popup
     // gets a fresh single-tab window, which joins the session. Tabs in other windows never do.
     async adoptOpened(tab) {
       if (tab.openerTabId == null) return;
       const opener = await api.tabs.get(tab.openerTabId).catch(() => null);
-      const rec = opener && recordOfWindow(opener.windowId);
+      const rec = opener && recordOfTab(opener);
       if (!rec) return;
       if (rec.windows.has(tab.windowId)) {
-        if (tab.windowId === rec.main && rec.groupId != null) await groupCall(() => api.tabs.group({ groupId: rec.groupId, tabIds: [tab.id] })).catch(() => {});
+        if (tab.windowId === rec.main) await joinGroup(rec, [tab.id]);
         return;
       }
       if ((await api.tabs.query({ windowId: tab.windowId })).length !== 1) return;
@@ -162,7 +201,7 @@ export function createSessions(api, { onLoaded = () => {} } = {}) {
 
     // Only sessions a call has loaded count, so windows restored from a session that ended without session_closed stay inert.
     async sessionOfTab(tab) {
-      return recordOfWindow(tab.windowId)?.id ?? null;
+      return recordOfTab(tab)?.id ?? null;
     },
 
     async sessionTabs(sessionId) {
@@ -220,10 +259,15 @@ export function createSessions(api, { onLoaded = () => {} } = {}) {
       const rec = records.get(sessionId) ?? (await scan(sessionId));
       if (!rec) return [];
       const tabs = await tabsOf(rec).catch(() => []);
-      for (const windowId of rec.windows) await api.sessions.removeWindowValue(windowId, KEY).catch(() => {});
+      for (const windowId of rec.windows) await api.sessions.removeWindowValue(windowId, keyOf(rec, windowId)).catch(() => {});
       records.delete(sessionId);
-      await api.windows.update(rec.main, { titlePreface: "" }).catch(() => {});
-      if (rec.groupId != null) await groupCall(() => api.tabGroups.update(rec.groupId, { title: "" })).catch(() => {});
+      if (rec.grouped) {
+        const inGroup = tabs.filter((t) => t.windowId === rec.main).map((t) => t.id);
+        if (inGroup.length) await groupCall(() => api.tabs.ungroup(inGroup)).catch(() => {});
+      } else {
+        await api.windows.update(rec.main, { titlePreface: "" }).catch(() => {});
+        if (rec.groupId != null) await groupCall(() => api.tabGroups.update(rec.groupId, { title: "" })).catch(() => {});
+      }
       return tabs;
     },
   };
