@@ -35,6 +35,7 @@ export function tabTools({ api, sessions }) {
     resize_window: {
       tabScoped: true,
       async run({ tab, args }) {
+        if (await sessions.sharesUserWindow(tab)) throw new Error("resize_window: this session's tabs are in the user's own window, which Claude does not resize.");
         const width = Math.round(Number(args.width));
         const height = Math.round(Number(args.height));
         if (!(width >= 100 && width <= 7680 && height >= 100 && height <= 4320)) throw new Error("resize_window: width must be 100-7680 and height 100-4320");

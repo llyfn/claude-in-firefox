@@ -130,3 +130,15 @@ test("withScheme prefixes https to scheme-less URLs including host:port and keep
   for (const url of ["localhost:3000", "example.com:8080/path", "example.com", "127.0.0.1:8080"]) assert.equal(withScheme(url), `https://${url}`);
   for (const url of ["http://a.test", "HTTPS://a.test", "ftp://a.test", "about:blank", "data:text/html,hi", "javascript:void 0", "view-source:https://a.test", "moz-extension://id/page.html", "file:///tmp/a.html"]) assert.equal(withScheme(url), url);
 });
+
+test("resize_window refuses to resize the user's own window and resizes a session window", async () => {
+  const resized = [];
+  const api = { windows: { update: async (id, props) => { resized.push([id, props.width, props.height]); } } };
+  const tab = { id: 1, windowId: 7 };
+  const shared = tabTools({ api, sessions: { sharesUserWindow: async () => true } });
+  await assert.rejects(shared.resize_window.run({ tab, args: { width: 800, height: 600 } }), /the user's own window/);
+  assert.deepEqual(resized, []);
+  const own = tabTools({ api, sessions: { sharesUserWindow: async () => false } });
+  assert.equal(await own.resize_window.run({ tab, args: { width: 800, height: 600 } }), "Resized window to 800x600");
+  assert.deepEqual(resized, [[7, 800, 600]]);
+});

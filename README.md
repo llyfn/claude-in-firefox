@@ -6,7 +6,7 @@ It works in your real profile, with your logins. Read [Safety](#safety) before y
 
 ## Quick start
 
-You need Firefox 140 or newer and Node 20 or newer, on macOS, Linux or Windows. On Linux, the Snap and Flatpak builds of Firefox are not supported.
+You need Firefox 140 or newer and Node 20 or newer, on macOS, Linux or Windows. On Linux, the Snap and Flatpak builds of Firefox are not supported. [Zen](https://zen-browser.app/) works too; see [Zen](#zen).
 
 1. **Add-on.** Install [Claude Code Bridge for Firefox](https://addons.mozilla.org/firefox/addon/claude-code-bridge-for-firefox/) from addons.mozilla.org.
 2. **Bridge.** Run:
@@ -22,8 +22,8 @@ You need Firefox 140 or newer and Node 20 or newer, on macOS, Linux or Windows. 
 Claude Code ──▶ claude-firefox mcp ──socket or pipe──▶ native host ──native messaging──▶ add-on
 ```
 
-- Each Claude Code session gets its own Firefox window, opened behind yours. It can only touch tabs in that window, plus popups opened from them.
-- The window title, and the tab group when tab groups are on, show the session's status: ⌛ working, ✅ idle, ⏸ stopped.
+- Each Claude Code session gets its own Firefox window, opened behind yours. It can only touch tabs in that window, plus popups opened from them. Zen works differently; see [Zen](#zen).
+- The window title, and the tab group when tab groups are on, name the session, for example `Claude · d42a`, and add `working` while Claude is acting or `stopped` after you press Stop.
 - A violet glow and a cursor show which tab Claude is working in.
 - On Windows the two halves of the bridge talk over a named pipe. Before using the pipe, the MCP server checks that the process at the other end holds a key that only your user account can read.
 
@@ -66,6 +66,15 @@ Claude Code ──▶ claude-firefox mcp ──socket or pipe──▶ native ho
 - **Very early dialogs.** A dialog raised by a page's first scripts can show normally and stall the call until it times out.
 - **Focus.** Opening a session window brings Firefox to the front if another app is active.
 - **Windows** is tested in CI with Firefox Developer Edition only.
+
+## Zen
+
+Zen copies every tab into every window, so a session window would hold all of your tabs. In Zen, each session instead gets one tab in a "Claude · …" tab group at the end of your current window.
+
+- Claude can only touch tabs in its group, plus popups opened from them. Tabs it opens from its pages join the group. A tab you drag into the group becomes Claude's.
+- Claude works in the background and never switches your tab. Its pages run as background tabs, which some sites treat differently from the tab you're looking at.
+- When the session ends, its tabs are ungrouped and stay open.
+- Zen needs tab groups. If they are off, `tabs_context` says so.
 
 ## Update and uninstall
 
